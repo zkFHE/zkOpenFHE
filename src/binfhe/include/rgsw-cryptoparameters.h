@@ -128,7 +128,12 @@ public:
             NativeInteger(1) * (q >> 3),  // NOR
             NativeInteger(3) * (q >> 3),  // NAND
             NativeInteger(5) * (q >> 3),  // XOR_FAST
-            NativeInteger(1) * (q >> 3)   // XNOR_FAST
+            NativeInteger(1) * (q >> 3),   // XNOR_FAST
+            NativeInteger(7) * (q >> 3),  // MAJORITY
+            NativeInteger(11) * ((q/12)+1),// >> 4),  // AND3 TODO:if p = 6, then cannot divide region as q power denom
+            NativeInteger(7) * ((q/12)+1),// >> 4),  // OR3
+            NativeInteger(15) * (q >> 4),  // AND4
+            NativeInteger(9) * (q >> 4)  // OR4
         };
 
         // Computes polynomials X^m - 1 that are needed in the accumulator for the

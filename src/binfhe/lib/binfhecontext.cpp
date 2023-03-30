@@ -139,6 +139,8 @@ void BinFHEContext::GenerateBinFHEContext(BINFHE_PARAMSET set, BINFHE_METHOD met
         { STD128_AP,       { 27,     2048,         512, 1024, 1 << 14, STD_DEV, 1 << 7,    1 <<  9,  32 } },
         { STD128_APOPT,    { 27,     2048,         502, 1024, 1 << 14, STD_DEV, 1 << 7,    1 <<  9,  32 } },
         { STD128,          { 27,     2048,         512, 1024, 1 << 14, STD_DEV, 1 << 7,    1 <<  7,  32 } },
+        { STD128_3,        { 27,     2048,         512, 2048, 1 << 14, STD_DEV, 1 << 7,    1 <<  7,  32 } },
+        { STD128_AP_3,     { 27,     2048,         512, 2048, 1 << 14, STD_DEV, 1 << 7,    1 <<  9,  32 } },
         { STD128_OPT,      { 27,     2048,         502, 1024, 1 << 14, STD_DEV, 1 << 7,    1 <<  7,  32 } },
         { STD192,          { 37,     4096,        1024, 1024, 1 << 19, STD_DEV,     28,    1 << 13,  32 } },
         { STD192_OPT,      { 37,     4096,         805, 1024, 1 << 15, STD_DEV,     32,    1 << 13,  32 } },
@@ -282,6 +284,18 @@ void BinFHEContext::BTKeyGen(ConstLWEPrivateKey sk, KEYGEN_MODE keygenMode) {
 
 LWECiphertext BinFHEContext::EvalBinGate(const BINGATE gate, ConstLWECiphertext ct1, ConstLWECiphertext ct2) const {
     return m_binfhescheme->EvalBinGate(m_params, gate, m_BTKey, ct1, ct2);
+}
+
+//LWECiphertext BinFHEContext::EvalBinGateVector(const BINGATE gate, std::vector<LWECiphertext> cts) const {
+//    return m_binfhescheme->EvalBinGateVector(m_params, gate, m_BTKey, cts);
+//}
+
+LWECiphertext BinFHEContext::EvalBinGateThreeInput(const BINGATE gate, ConstLWECiphertext ct1, ConstLWECiphertext ct2, ConstLWECiphertext ct3) const {
+    return m_binfhescheme->EvalBinGateThreeInput(m_params, gate, m_BTKey, ct1, ct2, ct3);
+}
+
+LWECiphertext BinFHEContext::EvalBinGateFourInput(const BINGATE gate, ConstLWECiphertext ct1, ConstLWECiphertext ct2, ConstLWECiphertext ct3, ConstLWECiphertext ct4) const {
+    return m_binfhescheme->EvalBinGateFourInput(m_params, gate, m_BTKey, ct1, ct2, ct3, ct4);
 }
 
 LWECiphertext BinFHEContext::Bootstrap(ConstLWECiphertext ct) const {
