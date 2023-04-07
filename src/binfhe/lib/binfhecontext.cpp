@@ -134,12 +134,20 @@ void BinFHEContext::GenerateBinFHEContext(BINFHE_PARAMSET set, BINFHE_METHOD met
     // clang-format off
     const std::unordered_map<BINFHE_PARAMSET, BinFHEContextParams> paramsMap({
         //           numberBits|cyclOrder|latticeParam|  mod|   modKS|  stdDev| baseKS| gadgetBase|baseRK
+        { STD256Q_3,       { 27,     4096,        2048, 4096, 1 << 16, STD_DEV, 1 << 4,    1 <<  6,  46 } },
+        { STD128_3,        { 27,     2048,         512, 2048, 1 << 14, STD_DEV, 1 << 7,    1 <<  4,  32 } },
+        { STD128Q_3,       { 50,     4096,        1024, 4096, 1 << 25, STD_DEV,     32,    1 << 25,  32 } },
+        { STD128Q_OPT_3,   { 50,     4096,         585, 4096, 1 << 15, STD_DEV,     32,    1 << 15,  32 } },
+        { STD128Q_OPT_3_en,{ 50,     4096,         725, 4096, 1 << 18, STD_DEV,      8,    1 << 25,  32 } },
+        { STD192Q_3,       { 35,     4096,        1024, 4096, 1 << 17, STD_DEV,     64,    1 << 9,   32 } },
+        { STD192Q_OPT_3,   { 35,     4096,         875, 4096, 1 << 15, STD_DEV,     32,    1 << 9,   32 } },
+        { STD192Q_OPT_3_en,{ 35,     4096,         950, 4096, 1 << 16, STD_DEV,      8,    1 << 9,  32 } },
+        { STD256Q_OPT_3,   { 27,     4096,        1400, 4096, 1 << 18, STD_DEV,      8,    1 << 6,  32 } },
         { TOY,             { 27,     1024,          64,  512,   PRIME, STD_DEV,     25,    1 <<  9,  23 } },
         { MEDIUM,          { 28,     2048,         422, 1024, 1 << 14, STD_DEV, 1 << 7,    1 << 10,  32 } },
         { STD128_AP,       { 27,     2048,         512, 1024, 1 << 14, STD_DEV, 1 << 7,    1 <<  9,  32 } },
         { STD128_APOPT,    { 27,     2048,         502, 1024, 1 << 14, STD_DEV, 1 << 7,    1 <<  9,  32 } },
         { STD128,          { 27,     2048,         512, 1024, 1 << 14, STD_DEV, 1 << 7,    1 <<  7,  32 } },
-        { STD128_3,        { 27,     2048,         512, 2048, 1 << 14, STD_DEV, 1 << 7,    1 <<  7,  32 } },
         { STD128_AP_3,     { 27,     2048,         512, 2048, 1 << 14, STD_DEV, 1 << 7,    1 <<  9,  32 } },
         { STD128_OPT,      { 27,     2048,         502, 1024, 1 << 14, STD_DEV, 1 << 7,    1 <<  7,  32 } },
         { STD192,          { 37,     4096,        1024, 1024, 1 << 19, STD_DEV,     28,    1 << 13,  32 } },
