@@ -492,7 +492,7 @@ DecryptResult CryptoContextImpl<Element>::Decrypt(ConstCiphertext<Element> ciphe
         result = GetScheme()->Decrypt(ciphertext, privateKey, &decrypted->GetElement<NativePoly>());
     }
 
-    if (result.isValid == false) // TODO (dsuponit): why don't we throw an exception here?
+    if (result.isValid == false)  // TODO (dsuponit): why don't we throw an exception here?
         return result;
 
     decrypted->SetScalingFactorInt(result.scalingFactorInt);
@@ -651,6 +651,71 @@ template <typename Element>
 Ciphertext<Element> CryptoContextImpl<Element>::EvalBootstrap(ConstCiphertext<Element> ciphertext,
                                                               uint32_t numIterations, uint32_t precision) const {
     return GetScheme()->EvalBootstrap(ciphertext, numIterations, precision);
+}
+
+//------------------------------------------------------------------------------
+// SCHEMESWITCHING Methods
+//------------------------------------------------------------------------------
+
+template <typename Element>
+void CryptoContextImpl<Element>::EvalSchemeSwitchingSetup(std::vector<uint32_t> levelBudget, std::vector<uint32_t> dim1,
+                                                          uint32_t numSlots, uint32_t correctionFactor) {
+    GetScheme()->EvalSchemeSwitchingSetup(*this, levelBudget, dim1, numSlots, correctionFactor);
+}
+
+template <typename Element>
+void CryptoContextImpl<Element>::EvalSchemeSwitchingKeyGen(const PrivateKey<Element> privateKey, uint32_t slots) {
+    if (privateKey == NULL || this->Mismatched(privateKey->GetCryptoContext())) {
+        OPENFHE_THROW(config_error,
+                      "Private key passed to EvalBootstapKeyGen was not generated with this crypto context");
+    }
+    GetScheme()->EvalSchemeSwitchingKeyGen(privateKey, slots);
+}
+
+template <typename Element>
+void CryptoContextImpl<Element>::EvalSchemeSwitching(ConstCiphertext<Element> ciphertext, uint32_t numIterations,
+                                                     uint32_t precision) const {
+    return GetScheme()->EvalSchemeSwitching(ciphertext, numIterations, precision);
+}
+
+template <typename Element>
+std::pair<BinFHEContext, LWEPrivateKey> CryptoContextImpl<Element>::EvalCKKStoFHEWSetup(bool dynamic, uint32_t logQ,
+                                                                                        SecurityLevel sl,
+                                                                                        uint32_t numSlotsCKKS) {
+    return GetScheme()->EvalCKKStoFHEWSetup(*this, dynamic, logQ, sl, numSlotsCKKS);
+}
+
+template <typename Element>
+void CryptoContextImpl<Element>::EvalCKKStoFHEWKeyGen(const KeyPair<Element>& keyPair, LWEPrivateKey& lwesk) {
+    if (keyPair.secretKey == NULL || this->Mismatched(keyPair.secretKey->GetCryptoContext())) {  // Add test for lwesk?
+        OPENFHE_THROW(config_error,
+                      "Private key passed to EvalCKKStoFHEWKeyGen was not generated with this crypto context");
+    }
+    auto evalKeys = GetScheme()->EvalCKKStoFHEWKeyGen(keyPair, lwesk);
+
+    auto ekv = GetAllEvalAutomorphismKeys().find(keyPair.secretKey->GetKeyTag());
+    if (ekv == GetAllEvalAutomorphismKeys().end()) {
+        GetAllEvalAutomorphismKeys()[keyPair.secretKey->GetKeyTag()] = evalKeys;
+    }
+    else {
+        auto& currRotMap = GetEvalAutomorphismKeyMap(keyPair.secretKey->GetKeyTag());
+        auto iterRowKeys = evalKeys->begin();
+        while (iterRowKeys != evalKeys->end()) {
+            auto idx = iterRowKeys->first;
+            // Search current rotation key map and add key
+            // only if it doesn't exist
+            if (currRotMap.find(idx) == currRotMap.end()) {
+                currRotMap.insert(*iterRowKeys);
+            }
+            iterRowKeys++;
+        }
+    }
+}
+
+template <typename Element>
+std::vector<std::shared_ptr<LWECiphertextImpl>> CryptoContextImpl<Element>::EvalCKKStoFHEW(
+    ConstCiphertext<Element> ciphertext, double scale, uint32_t numCtxts) const {
+    return GetScheme()->EvalCKKStoFHEW(ciphertext, scale, numCtxts);
 }
 
 }  // namespace lbcrypto
@@ -814,7 +879,7 @@ std::unordered_map<uint32_t, DCRTPoly> CryptoContextImpl<DCRTPoly>::ShareKeys(co
         SecretSharesVec.reserve(num_of_shares);
         SecretSharesVec.push_back(rsum);
         for (size_t i = 1; i < num_of_shares - 1; ++i) {
-            DCRTPoly r(dug, elementParams, Format::EVALUATION); // should re-generate uniform r for each share
+            DCRTPoly r(dug, elementParams, Format::EVALUATION);  // should re-generate uniform r for each share
             rsum += r;
             SecretSharesVec.push_back(std::move(r));
         }
@@ -984,7 +1049,7 @@ void CryptoContextImpl<DCRTPoly>::RecoverSharedKey(PrivateKey<DCRTPoly>& sk,
                 multpoly.SetValues(multvec, Format::COEFFICIENT);
                 for (size_t i = 0; i < client_indexes_size; i++) {
                     if (client_indexes[j] != client_indexes[i]) {
-                        auto denominator             = client_indexes[i] - client_indexes[j];
+                        auto denominator = client_indexes[i] - client_indexes[j];
                         NativeInteger denom_positive(0);
                         if (denominator < 0) {
                             denom_positive = NativeInteger(-1) * denominator;

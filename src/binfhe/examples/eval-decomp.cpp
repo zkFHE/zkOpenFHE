@@ -50,7 +50,7 @@ int main() {
     // However, we do not provide such a step in this example.
     // Therefore, we use a brute force way to create a large LWE ciphertext.
     uint32_t logQ = 23;
-    cc.GenerateBinFHEContext(STD128, false, logQ, 0, GINX, true);
+    cc.GenerateBinFHEContext(STD128, false, logQ, 0, GINX, false);
 
     uint32_t Q = 1 << logQ;
 
@@ -84,7 +84,7 @@ int main() {
         ct1 = decomp[i];
         LWEPlaintext result;
         if (i == decomp.size() - 1) {
-            p = 2;
+            p = 8;
         }
         cc.Decrypt(sk, ct1, &result, p);
         std::cout << "(" << result << " * " << cc.GetMaxPlaintextSpace() << "^" << i << ")";

@@ -50,6 +50,7 @@
 #include <map>
 #include <string>
 #include <memory>
+#include <utility>
 
 /**
  * @namespace lbcrypto
@@ -114,6 +115,8 @@ public:
             Enable(MULTIPARTY);
         if (mask & FHE)
             Enable(FHE);
+        if (mask & SCHEMESWITCH)
+            Enable(SCHEMESWITCH);
     }
 
     virtual usint GetEnabled() const {
@@ -133,6 +136,8 @@ public:
             flag |= MULTIPARTY;
         if (m_FHE != nullptr)
             flag |= FHE;
+        if (m_SchemeSwitch != nullptr)
+            flag |= SCHEMESWITCH;
 
         return flag;
     }
@@ -1586,6 +1591,68 @@ public:
         OPENFHE_THROW(config_error, "EvalBootstrap operation has not been enabled");
     }
 
+    // SCHEMESWITCHING methods
+
+    void EvalSchemeSwitchingSetup(const CryptoContextImpl<Element>& cc,
+                                  const std::vector<uint32_t>& levelBudget = {5, 4},
+                                  const std::vector<uint32_t>& dim1 = {0, 0}, uint32_t slots = 0,
+                                  uint32_t correctionFactor = 0) {
+        if (m_SchemeSwitch) {
+            m_SchemeSwitch->EvalSchemeSwitchingSetup(cc, levelBudget, dim1, slots, correctionFactor);
+            return;
+        }
+
+        OPENFHE_THROW(config_error, "EvalSchemeSwitchingSetup operation has not been enabled");
+    }
+
+    void EvalSchemeSwitchingKeyGen(const PrivateKey<Element> privateKey, uint32_t slots) {
+        if (m_SchemeSwitch) {
+            m_SchemeSwitch->EvalSchemeSwitchingKeyGen(privateKey, slots);
+            return;
+        }
+
+        OPENFHE_THROW(config_error, "EvalSchemeSwitchingKeyGen operation has not been enabled");
+    }
+
+    void EvalSchemeSwitching(ConstCiphertext<Element> ciphertext, uint32_t numIterations = 1,
+                             uint32_t precision = 0) const {
+        if (m_SchemeSwitch) {
+            m_SchemeSwitch->EvalSchemeSwitching(ciphertext, numIterations, precision);
+            return;
+        }
+
+        OPENFHE_THROW(config_error, "EvalSchemeSwitching operation has not been enabled");
+    }
+
+    std::pair<BinFHEContext, LWEPrivateKey> EvalCKKStoFHEWSetup(const CryptoContextImpl<DCRTPoly>& cc,
+                                                                bool dynamic = false, uint32_t logQ = 29,
+                                                                SecurityLevel sl      = HEStd_128_classic,
+                                                                uint32_t numSlotsCKKS = 0) {
+        if (m_SchemeSwitch) {
+            return m_SchemeSwitch->EvalCKKStoFHEWSetup(cc, dynamic, logQ, sl, numSlotsCKKS);
+        }
+
+        OPENFHE_THROW(config_error, "EvalCKKStoFHEWSetup operation has not been enabled");
+    }
+
+    std::shared_ptr<std::map<usint, EvalKey<Element>>> EvalCKKStoFHEWKeyGen(const KeyPair<Element>& keyPair,
+                                                                            LWEPrivateKey& lwesk) {
+        if (m_SchemeSwitch) {
+            return m_SchemeSwitch->EvalCKKStoFHEWKeyGen(keyPair, lwesk);
+        }
+
+        OPENFHE_THROW(config_error, "EvalCKKStoFHEWKeyGen operation has not been enabled");
+    }
+
+    std::vector<std::shared_ptr<LWECiphertextImpl>> EvalCKKStoFHEW(ConstCiphertext<Element> ciphertext,
+                                                                   double scale = 1.0, uint32_t numCtxts = 0) const {
+        if (m_SchemeSwitch) {
+            return m_SchemeSwitch->EvalCKKStoFHEW(ciphertext, scale, numCtxts);
+        }
+
+        OPENFHE_THROW(config_error, "EvalCKKStoFHEW operation has not been enabled");
+    }
+
     template <class Archive>
     void save(Archive& ar, std::uint32_t const version) const {
         ar(::cereal::make_nvp("enabled", GetEnabled()));
@@ -1621,6 +1688,8 @@ public:
         out << ", AdvancedSHE " << (s.m_AdvancedSHE == 0 ? "none" : typeid(*s.m_AdvancedSHE).name());
         out << ", Multiparty " << (s.m_Multiparty == 0 ? "none" : typeid(*s.m_Multiparty).name());
         out << ", FHE " << (s.m_FHE == 0 ? "none" : typeid(*s.m_FHE).name());
+        out << ", SchemeSwitch " << (s.m_SchemeSwitch == 0 ? "none" : typeid(*s.m_SchemeSwitch).name());
+
         return out;
     }
 
@@ -1633,6 +1702,7 @@ protected:
     std::shared_ptr<AdvancedSHEBase<Element>> m_AdvancedSHE;
     std::shared_ptr<MultipartyBase<Element>> m_Multiparty;
     std::shared_ptr<FHEBase<Element>> m_FHE;
+    std::shared_ptr<FHEBase<Element>> m_SchemeSwitch;
 };
 
 }  // namespace lbcrypto
