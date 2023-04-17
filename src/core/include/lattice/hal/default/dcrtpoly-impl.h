@@ -35,6 +35,9 @@
 
 #include <fstream>
 #include <memory>
+#include <utility>
+#include <vector>
+#include <string>
 
 #include "lattice/lat-hal.h"
 #include "utils/debug.h"
@@ -2564,9 +2567,9 @@ void DCRTPolyImpl<VecType>::FastBaseConvqToBskMontgomery(
     }
 
     // mod mtilde = 2^16
-    const uint64_t mtilde      = (uint64_t)1 << 16;
-    const uint64_t mtilde_half = mtilde >> 1;
-    const uint64_t mtilde_minus_1 = mtilde-1;
+    const uint64_t mtilde         = (uint64_t)1 << 16;
+    const uint64_t mtilde_half    = mtilde >> 1;
+    const uint64_t mtilde_minus_1 = mtilde - 1;
 
     std::vector<uint64_t> result_mtilde(n, 0);
     #pragma omp parallel for
@@ -2697,9 +2700,9 @@ void DCRTPolyImpl<VecType>::FastBaseConvqToBskMontgomery(
     }
 
     // mod mtilde = 2^16
-    const uint64_t mtilde      = (uint64_t)1 << 16;
-    const uint64_t mtilde_half = mtilde >> 1;
-    const uint64_t mtilde_minus_1 = mtilde-1;
+    const uint64_t mtilde         = (uint64_t)1 << 16;
+    const uint64_t mtilde_half    = mtilde >> 1;
+    const uint64_t mtilde_minus_1 = mtilde - 1;
 
     std::vector<uint64_t> result_mtilde(n, 0);
     #pragma omp parallel for
