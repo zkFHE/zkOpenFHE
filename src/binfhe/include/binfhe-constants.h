@@ -34,7 +34,7 @@
 
 #include <cstdint>
 #include <iosfwd>
-
+#include <string>
 namespace lbcrypto {
 
 using LWEPlaintext        = int64_t;
@@ -44,16 +44,16 @@ using LWEPlaintextModulus = uint64_t;
  * @brief Security levels for predefined parameter sets
  */
 enum BINFHE_PARAMSET {
-    TOY,             // no security
-    MEDIUM,          // 108 bits of security for classical and 100 bits for quantum
-    STD128_AP,       // Optimized for AP (has higher failure probability for GINX) -
-                     // more than 128 bits of security for classical
-                     // computer attacks - uses the same setup as HE standard
-    STD128_APOPT,    // Optimized for AP (has higher failure probability for GINX) -
-                     // more than 128 bits of security for classical computer attacks -
-                     // optimize runtime by finding a non-power-of-two n
-    STD128,          // more than 128 bits of security for classical
-                     // computer attacks - uses the same setup as HE standard
+    TOY,           // no security
+    MEDIUM,        // 108 bits of security for classical and 100 bits for quantum
+    STD128_AP,     // Optimized for AP (has higher failure probability for GINX) -
+                   // more than 128 bits of security for classical
+                   // computer attacks - uses the same setup as HE standard
+    STD128_APOPT,  // Optimized for AP (has higher failure probability for GINX) -
+                   // more than 128 bits of security for classical computer attacks -
+                   // optimize runtime by finding a non-power-of-two n
+    STD128,        // more than 128 bits of security for classical
+                   // computer attacks - uses the same setup as HE standard
     STD128_3,
     STD128_en,
     STD128_en_3_1,
@@ -61,6 +61,7 @@ enum BINFHE_PARAMSET {
     STD128_AP_3,
     STD128Q_3,
     STD128Q_OPT_3,
+    STD128Q_OPT_3_nQks1,
     STD128Q_OPT_3_en,
     STD192Q_3,
     STD192Q_OPT_3,
