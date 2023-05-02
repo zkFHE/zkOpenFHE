@@ -312,10 +312,10 @@ LWECiphertext BinFHEContext::EvalFloor(ConstLWECiphertext ct, uint32_t roundbits
     return m_binfhescheme->EvalFloor(m_params, m_BTKey, ct, GetBeta(), roundbits);
 }
 
-LWECiphertext BinFHEContext::EvalSign(ConstLWECiphertext ct) {
+LWECiphertext BinFHEContext::EvalSign(ConstLWECiphertext ct, bool schemeSwitch) {
     auto params        = std::make_shared<BinFHECryptoParams>(*m_params);
     NativeInteger beta = GetBeta();
-    return m_binfhescheme->EvalSign(params, m_BTKey_map, ct, beta);
+    return m_binfhescheme->EvalSign(params, m_BTKey_map, ct, beta, schemeSwitch);
 }
 
 std::vector<LWECiphertext> BinFHEContext::EvalDecomp(ConstLWECiphertext ct) {
