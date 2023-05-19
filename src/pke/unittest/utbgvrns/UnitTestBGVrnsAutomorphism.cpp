@@ -136,13 +136,16 @@ static std::ostream& operator<<(std::ostream& os, const TEST_CASE_UTBGVRNS_AUTOM
     return os << test.toString();
 }
 //===========================================================================================================
-std::vector<TEST_CASE_UTBGVRNS_AUTOMORPHISM> getTestData(std::string fileName) {
+static std::vector<TEST_CASE_UTBGVRNS_AUTOMORPHISM> getTestData(std::string fileName) {
+    std::vector<TEST_CASE_UTBGVRNS_AUTOMORPHISM> allData;
+    #if defined EMSCRIPTEN
+    try {
+    #endif
     // TODO: add a new test data file for NATIVEINT == 128
     std::string testDataFileName(createDataFileName(fileName));
     std::vector<std::vector<std::string>> fileRows(readDataFile(testDataFileName));
     size_t numRows = fileRows.size();
 
-    std::vector<TEST_CASE_UTBGVRNS_AUTOMORPHISM> allData;
     allData.reserve(numRows);
 
     for (const std::vector<std::string>& vec : fileRows) {
@@ -173,6 +176,23 @@ std::vector<TEST_CASE_UTBGVRNS_AUTOMORPHISM> getTestData(std::string fileName) {
 
         allData.push_back(std::move(testCase));
     }
+
+    #if defined EMSCRIPTEN
+    }
+    catch (std::exception& e) {
+        std::cerr << "Exception thrown from " << __func__ << "(): " << e.what() << std::endl;
+        // make it fail
+        EXPECT_EQ(0, 1);
+    }
+    catch (...) {
+        std::string name("EMSCRIPTEN_UNKNOWN");
+        std::cerr << "Unknown exception of type \"" << name << "\" thrown from " << __func__ << "()"
+                  << std::endl;
+        // make it fail
+        EXPECT_EQ(0, 1);
+    }
+    #endif
+
     return allData;
 }
 //===========================================================================================================
