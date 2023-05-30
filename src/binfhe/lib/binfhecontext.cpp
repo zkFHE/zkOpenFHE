@@ -208,12 +208,14 @@ void BinFHEContext::GenerateBinFHEContext(BinFHEContextParams params, BINFHE_MET
     NativeInteger Q(
         PreviousPrime<NativeInteger>(FirstPrime<NativeInteger>(params.numberBits, params.cyclOrder), params.cyclOrder));
 
-    usint ringDim   = params.cyclOrder / 2;
-    auto lweparams  = (PRIME == params.modKS) ?
-                          std::make_shared<LWECryptoParams>(params.latticeParam, ringDim, params.mod, Q, Q,
+    usint ringDim = params.cyclOrder / 2;
+
+    auto lweparams = (PRIME == params.modKS) ?
+                         std::make_shared<LWECryptoParams>(params.latticeParam, ringDim, params.mod, Q, Q,
                                                            params.stdDev, params.baseKS) :
-                          std::make_shared<LWECryptoParams>(params.latticeParam, ringDim, params.mod, Q, params.modKS,
+                         std::make_shared<LWECryptoParams>(params.latticeParam, ringDim, params.mod, Q, params.modKS,
                                                            params.stdDev, params.baseKS);
+
     auto rgswparams = std::make_shared<RingGSWCryptoParams>(ringDim, Q, params.mod, params.gadgetBase, params.baseRK,
                                                             method, params.stdDev);
 
@@ -223,7 +225,7 @@ void BinFHEContext::GenerateBinFHEContext(BinFHEContextParams params, BINFHE_MET
 
 LWEPrivateKey BinFHEContext::KeyGen() const {
     auto& LWEParams = m_params->GetLWEParams();
-    return m_LWEscheme->KeyGen(LWEParams->Getn(), LWEParams->GetqKS());
+    return m_LWEscheme->KeyGen(LWEParams->Getn(), LWEParams->Getq());  // KS());
 }
 
 LWEPrivateKey BinFHEContext::KeyGenN() const {
@@ -313,7 +315,6 @@ void BinFHEContext::BTKeyGen(ConstLWEPrivateKey sk, KEYGEN_MODE keygenMode) {
         }
         RGSWParams->Change_BaseG(temp);
     }
-
     if (m_BTKey_map.size() != 0) {
         m_BTKey = m_BTKey_map[temp];
     }
