@@ -225,7 +225,7 @@ void BinFHEContext::GenerateBinFHEContext(BinFHEContextParams params, BINFHE_MET
 
 LWEPrivateKey BinFHEContext::KeyGen() const {
     auto& LWEParams = m_params->GetLWEParams();
-    return m_LWEscheme->KeyGen(LWEParams->Getn(), LWEParams->Getq());  // KS());
+    return m_LWEscheme->KeyGen(LWEParams->Getn(), LWEParams->GetqKS());
 }
 
 LWEPrivateKey BinFHEContext::KeyGenN() const {
