@@ -951,6 +951,33 @@ void DCRTPolyImpl<VecType>::SetValuesToZero() {
 /*OTHER FUNCTIONS*/
 
 template <typename VecType>
+DCRTPolyImpl<VecType> DCRTPolyImpl<VecType>::SetValuesModSwitch(const DCRTPolyImpl& element, NativeInteger modulus) {
+    if (element.GetNumOfElements() != 1) {
+        OPENFHE_THROW(not_implemented_error, "SetValuesModSwitch is implemented only for a DCRTPoly with one tower.");
+    }
+
+    auto Q = element.GetModulus();
+    this->m_params->SetOriginalModulus(modulus);
+
+    for (size_t i = 0; i < m_vectors.size(); i++) {
+        NativeVector temp(this->GetRingDimension());
+        temp.SetModulus(modulus);
+        auto input = element.Clone();
+        input.SetFormat(Format::COEFFICIENT);
+
+        double Qmod_double = Q.ConvertToDouble() / modulus.ConvertToDouble();
+        for (size_t i = 0; i < temp.GetLength(); i++) {
+            temp[i] = Integer(static_cast<uint64_t>(
+                                  std::floor(0.5 + input.GetElementAtIndex(0)[i].ConvertToDouble() / Qmod_double)))
+                          .Mod(modulus);
+        }
+        m_vectors[i].SetValues(std::move(temp), Format::COEFFICIENT);
+    }
+
+    return *this;
+}
+
+template <typename VecType>
 void DCRTPolyImpl<VecType>::AddILElementOne() {
     if (this->GetFormat() != Format::EVALUATION)
         OPENFHE_THROW(not_available_error,
@@ -2564,9 +2591,9 @@ void DCRTPolyImpl<VecType>::FastBaseConvqToBskMontgomery(
     }
 
     // mod mtilde = 2^16
-    const uint64_t mtilde      = (uint64_t)1 << 16;
-    const uint64_t mtilde_half = mtilde >> 1;
-    const uint64_t mtilde_minus_1 = mtilde-1;
+    const uint64_t mtilde         = (uint64_t)1 << 16;
+    const uint64_t mtilde_half    = mtilde >> 1;
+    const uint64_t mtilde_minus_1 = mtilde - 1;
 
     std::vector<uint64_t> result_mtilde(n, 0);
     #pragma omp parallel for
@@ -2697,9 +2724,9 @@ void DCRTPolyImpl<VecType>::FastBaseConvqToBskMontgomery(
     }
 
     // mod mtilde = 2^16
-    const uint64_t mtilde      = (uint64_t)1 << 16;
-    const uint64_t mtilde_half = mtilde >> 1;
-    const uint64_t mtilde_minus_1 = mtilde-1;
+    const uint64_t mtilde         = (uint64_t)1 << 16;
+    const uint64_t mtilde_half    = mtilde >> 1;
+    const uint64_t mtilde_minus_1 = mtilde - 1;
 
     std::vector<uint64_t> result_mtilde(n, 0);
     #pragma omp parallel for

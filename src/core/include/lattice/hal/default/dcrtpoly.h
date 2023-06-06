@@ -704,6 +704,14 @@ public:
     }
 
     /**
+   * @brief Sets values with a different modulus
+   *
+   * @param element The DCRTPoly to convert, currently it throws an error if it has more than one tower
+   * @param modulus New modulus
+   */
+    DCRTPolyType SetValuesModSwitch(const DCRTPolyType& element, NativeInteger modulus) override;
+
+    /**
    * @brief Sets all values of element to zero.
    */
     void SetValuesToZero() override;
