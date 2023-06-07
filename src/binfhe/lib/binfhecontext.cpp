@@ -112,6 +112,7 @@ void BinFHEContext::GenerateBinFHEContext(BINFHE_PARAMSET set, bool arbFunc, uin
 }
 
 void BinFHEContext::GenerateBinFHEContext(BINFHE_PARAMSET set, BINFHE_METHOD method) {
+    // TODO: reorder to optimize struct size/alignment
     struct BinFHEContextParams {
         // for intermediate prime, modulus for RingGSW / RLWE used in bootstrapping
         usint numberBits;
@@ -130,9 +131,9 @@ void BinFHEContext::GenerateBinFHEContext(BINFHE_PARAMSET set, BINFHE_METHOD met
         usint baseRK;      // base for the refreshing key
     };
     enum { PRIME = 0 };  // value for modKS if you want to use the intermediate prime for modulus for key switching
-    const double STD_DEV = 3.19;
+    constexpr double STD_DEV = 3.19;
     // clang-format off
-    const std::unordered_map<BINFHE_PARAMSET, BinFHEContextParams> paramsMap({
+    static const std::unordered_map<BINFHE_PARAMSET, BinFHEContextParams> paramsMap({
         //           numberBits|cyclOrder|latticeParam|  mod|   modKS|  stdDev| baseKS| gadgetBase|baseRK
         { TOY,             { 27,     1024,          64,  512,   PRIME, STD_DEV,     25,    1 <<  9,  23 } },
         { MEDIUM,          { 28,     2048,         422, 1024, 1 << 14, STD_DEV, 1 << 7,    1 << 10,  32 } },
