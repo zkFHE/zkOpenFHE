@@ -10,3 +10,6 @@
 [submodule "third-party/cereal"]
 	path = third-party/cereal
 	url = https://github.com/openfheorg/cereal.git
+[submodule "third-party/libsnark"]
+	path = third-party/libsnark
+	url = https://github.com/cknabs/libsnark
