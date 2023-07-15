@@ -590,6 +590,16 @@ if(WITH_TCM)
     install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/third-party/include DESTINATION include/openfhe/third-party/)
 endif()
 
+# Remove -Werror flag set by OpenFHE, since it prevents the compilation of other libs
+string(REPLACE " -Werror" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+
+# Add third-party libsnark
+set(CURVE "BN128" CACHE STRING "Default curve: one of ALT_BN128, BN128, EDWARDS, MNT4, MNT6")
+add_definitions(-DCURVE_${CURVE})
+add_subdirectory(third-party/libsnark)
+include_directories(third-party/libsnark third-party/libsnark/depends/libfqfft third-party/libsnark/depends/libff third-party/libsnark/depends/libfqfft/depends/libff third-party/libsnark/depends/libfqfft/depends/libfq)
+link_directories(third-party/libsnark third-party/libsnark/depends/libfqfft third-party/libsnark/depends/libff third-party/libsnark/depends/libfqfft/depends/libff third-party/libsnark/depends/libfqfft/depends/libfq)
+
 if(WITH_NTL)
     ### Find gmp and ntl libraries. They must be installed by the user
     list(APPEND general_paths "/usr" "/usr/local" "/opt" "/opt/local")
