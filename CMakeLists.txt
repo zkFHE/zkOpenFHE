@@ -597,8 +597,7 @@ string(REPLACE " -Werror" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 set(CURVE "BN128" CACHE STRING "Default curve: one of ALT_BN128, BN128, EDWARDS, MNT4, MNT6")
 add_definitions(-DCURVE_${CURVE})
 add_subdirectory(third-party/libsnark)
-include_directories(third-party/libsnark third-party/libsnark/depends/libfqfft third-party/libsnark/depends/libff third-party/libsnark/depends/libfqfft/depends/libff third-party/libsnark/depends/libfqfft/depends/libfq)
-link_directories(third-party/libsnark third-party/libsnark/depends/libfqfft third-party/libsnark/depends/libff third-party/libsnark/depends/libfqfft/depends/libff third-party/libsnark/depends/libfqfft/depends/libfq)
+include_directories(third-party/libsnark third-party/libsnark/depends/libfqfft third-party/libsnark/depends/libff)
 
 if(WITH_NTL)
     ### Find gmp and ntl libraries. They must be installed by the user
