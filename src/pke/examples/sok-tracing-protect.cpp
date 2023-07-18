@@ -11,7 +11,7 @@ using namespace lbcrypto;
 using std::cout, std::endl;
 using std::vector;
 
-std::default_random_engine generator(std::hash<std::string>()(("sok_tracing_protect")));
+std::default_random_engine generator(std::hash<std::string>()(("sok-tracing-protect")));
 
 void fill_pseudorandom(vector<int64_t>& vec, int64_t min, int64_t max) {
     std::uniform_int_distribution<int64_t> distribution(min, max);
