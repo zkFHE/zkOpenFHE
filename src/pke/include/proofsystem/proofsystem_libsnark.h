@@ -14,6 +14,9 @@ typedef libff::Fr<default_r1cs_ppzksnark_pp> FieldT;
 
 class LibsnarkProofMetadata : public ProofMetadata, private vector<vector<vector<pb_linear_combination<FieldT>>>> {
 public:
+    vector<size_t> modulus;
+    vector<size_t> curr_bit_size;
+
     explicit LibsnarkProofMetadata(const vector<vector<vector<pb_linear_combination<FieldT>>>>& pb_linear_combinations)
         : ProofMetadata(), vector<vector<vector<pb_linear_combination<FieldT>>>>(pb_linear_combinations) {}
 
@@ -31,10 +34,6 @@ public:
     LibsnarkProofSystem() {
         default_r1cs_ppzksnark_pp::init_public_params();
         pb = protoboard<FieldT>();
-        // TODO FIXME this is a hack
-        pb_variable<FieldT> dummy;
-        dummy.allocate(pb);
-        pb.set_input_sizes(1);
     }
     void ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext) override;
     void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
