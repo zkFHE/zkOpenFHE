@@ -21,6 +21,7 @@ public:
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::operator[];
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::size;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::operator=;
+    using vector<vector<vector<pb_linear_combination<FieldT>>>>::push_back;
 };
 
 class LibsnarkProofSystem : ProofSystem {
@@ -38,8 +39,10 @@ public:
     void ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext) override;
     void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                            Ciphertext<DCRTPoly>& ctxt_out) override;
+    void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
+                                 Ciphertext<DCRTPoly>& ctxt_out) override;
     static std::shared_ptr<LibsnarkProofMetadata> GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext);
-    static void SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext, const std::shared_ptr<LibsnarkProofMetadata>& metadata);
-
+    static void SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext,
+                                 const std::shared_ptr<LibsnarkProofMetadata>& metadata);
 };
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H
