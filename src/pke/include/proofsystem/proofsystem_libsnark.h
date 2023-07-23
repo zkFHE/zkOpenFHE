@@ -17,14 +17,21 @@ public:
     vector<size_t> modulus;
     vector<size_t> curr_bit_size;
 
+    explicit LibsnarkProofMetadata()
+        : ProofMetadata(), vector<vector<vector<pb_linear_combination<FieldT>>>>(), modulus(0), curr_bit_size(0) {}
+
     explicit LibsnarkProofMetadata(const vector<vector<vector<pb_linear_combination<FieldT>>>>& pb_linear_combinations)
-        : ProofMetadata(), vector<vector<vector<pb_linear_combination<FieldT>>>>(pb_linear_combinations) {}
+        : ProofMetadata(),
+          vector<vector<vector<pb_linear_combination<FieldT>>>>(pb_linear_combinations),
+          modulus(pb_linear_combinations.size()),
+          curr_bit_size(pb_linear_combinations.size()) {}
 
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::vector;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::operator[];
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::size;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::operator=;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::push_back;
+    using vector<vector<vector<pb_linear_combination<FieldT>>>>::emplace_back;
 };
 
 class LibsnarkProofSystem : ProofSystem {

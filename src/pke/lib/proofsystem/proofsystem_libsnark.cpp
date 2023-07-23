@@ -28,7 +28,9 @@ void LibsnarkProofSystem::SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertex
 }
 
 void LibsnarkProofSystem::ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext) {
-    auto out = std::make_shared<LibsnarkProofMetadata>(ciphertext->GetElements().size());
+    auto out           = std::make_shared<LibsnarkProofMetadata>(ciphertext->GetElements().size());
+    out->modulus       = vector<size_t>(ciphertext->GetElements().size());
+    out->curr_bit_size = vector<size_t>(ciphertext->GetElements().size());
     for (size_t i = 0; i < ciphertext->GetElements().size(); i++) {
         const auto c_i     = ciphertext->GetElements()[i];
         out->operator[](i) = vector<vector<pb_linear_combination<FieldT>>>(c_i.GetNumOfElements());
@@ -45,6 +47,11 @@ void LibsnarkProofSystem::ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext)
             }
         }
     }
+    for (size_t j = 0; j < ciphertext->GetElements()[0].GetNumOfElements(); j++) {
+        out->modulus[j] = ciphertext->GetElements()[0].GetElementAtIndex(j).GetModulus().ConvertToInt<unsigned long>();
+        out->curr_bit_size[j] = ceil(log2(out->modulus[j]));
+    }
+
     SetProofMetadata(ciphertext, out);
     pb.set_input_sizes(pb.num_inputs() + (out->size() * out->operator[](0).size() * out->operator[](0)[0].size()));
 }
@@ -61,12 +68,48 @@ void LibsnarkProofSystem::ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, c
     vector<BatchGadget<FieldT, AddModGadget<FieldT>>> add_mod_gadgets;
     LibsnarkProofMetadata out;
     assert(in1.size() == in2.size());
-    for (size_t i = 0; i < in1.size(); i++) {
-        add_mod_gadgets.emplace_back(pb, in1[i], in2[i], moduli);
-        add_mod_gadgets[i].generate_r1cs_constraints();
-        add_mod_gadgets[i].generate_r1cs_witness();
-        out.push_back(add_mod_gadgets[i].get_output());
+    assert(in1.modulus == in2.modulus);
+    assert(in1.modulus == moduli);
+
+    vector<size_t> out_bit_size(in1[0].size());
+    bool field_overflow = false;
+    for (size_t j = 0; j < in1[0].size(); ++j) {
+        out_bit_size[j] = std::max(in1.curr_bit_size[j], in2.curr_bit_size[j]) + 1ul;
+        field_overflow  = field_overflow || (out_bit_size[j] >= FieldT::num_bits);
     }
+
+    if (!field_overflow) {
+        // Lazy branch, do not add modulus constraints, but track size of values for later
+        for (size_t i = 0; i < in1.size(); i++) {
+            out.emplace_back(in1[i].size());
+            for (size_t j = 0; j < in1[i].size(); ++j) {
+                out[i][j] = vector<pb_linear_combination<FieldT>>(in1[i][j].size());
+                for (size_t k = 0; k < in1[i][j].size(); ++k) {
+                    out[i][j][k].assign(pb, in1[i][j][k] + in2[i][j][k]);
+                }
+            }
+        }
+
+        out.curr_bit_size = vector<size_t>(in1[0].size());
+        for (size_t j = 0; j < in1[0].size(); ++j) {
+            out.curr_bit_size[j] = out_bit_size[j];
+        }
+    }
+    else {
+        for (size_t i = 0; i < in1.size(); i++) {
+            add_mod_gadgets.emplace_back(pb, in1[i], in2[i], moduli);
+            add_mod_gadgets[i].generate_r1cs_constraints();
+            add_mod_gadgets[i].generate_r1cs_witness();
+            out.push_back(add_mod_gadgets[i].get_output());
+
+            out.curr_bit_size = vector<size_t>(in1[0].size());
+            for (size_t j = 0; j < in1[0].size(); ++j) {
+                out.curr_bit_size[j] = ceil(log2(out.modulus[j]));
+            }
+        }
+    }
+
+    out.modulus = in1.modulus;
     SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
 }
 

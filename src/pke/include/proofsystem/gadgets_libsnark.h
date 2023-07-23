@@ -106,6 +106,47 @@ public:
     }
 };
 
+template <typename FieldT>
+class MulModGadget : public gadget<FieldT> {
+public:
+    std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_quotient;
+    std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_remainder;
+    size_t modulus;
+    pb_linear_combination<FieldT> in1, in2;
+    pb_variable<FieldT> out, quotient;
+
+    MulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1,
+                 const pb_linear_combination<FieldT> in2, size_t modulus, const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in1), in2(in2) {
+        const size_t num_bits = ceil(log2(modulus));
+        out.allocate(pb);
+        quotient.allocate(pb);
+        // a, b < modulus ==> a*b = quotient * modulus + out and quotient < modulus
+        lt_constant_quotient.reset(new less_than_constant_gadget<FieldT>(pb, num_bits + 1, quotient, modulus));
+        lt_constant_remainder.reset(new less_than_constant_gadget<FieldT>(pb, num_bits + 1, out, modulus));
+    }
+
+    void generate_r1cs_constraints() {
+        this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(quotient * modulus + out, 1, in1 + in2));
+        // TODO: do we need an additional constraint on the size of out, or is this enough?
+        lt_constant_quotient->generate_r1cs_constraints();
+        lt_constant_remainder->generate_r1cs_constraints();
+    }
+
+    void generate_r1cs_witness() {
+        unsigned long w1 = this->pb.lc_val(in1).as_ulong();
+        unsigned long w2 = this->pb.lc_val(in2).as_ulong();
+        assert(this->pb.lc_val(in1).as_bigint().num_bits() + this->pb.lc_val(in2).as_bigint().num_bits() <=
+               2 * ceil(log2(modulus)));
+
+        this->pb.val(quotient) = (w1 * w2) / modulus;
+        this->pb.val(out)      = (w1 * w2) % modulus;
+
+        lt_constant_quotient->generate_r1cs_witness();
+        lt_constant_remainder->generate_r1cs_witness();
+    }
+};
+
 template <typename FieldT, typename Gadget>
 class BatchGadget : gadget<FieldT> {
 public:
@@ -156,47 +197,5 @@ public:
         return out;
     }
 };
-
-template <typename FieldT>
-class MulModGadget : public gadget<FieldT> {
-public:
-    std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_quotient;
-    std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_remainder;
-    size_t modulus;
-    pb_linear_combination<FieldT> in1, in2;
-    pb_variable<FieldT> out, quotient;
-
-    MulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1,
-                 const pb_linear_combination<FieldT> in2, size_t modulus, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in1), in2(in2) {
-        const size_t num_bits = ceil(log2(modulus));
-        out.allocate(pb);
-        quotient.allocate(pb);
-        // a, b < modulus ==> a*b = quotient * modulus + out and quotient < modulus
-        lt_constant_quotient.reset(new less_than_constant_gadget<FieldT>(pb, num_bits + 1, quotient, modulus));
-        lt_constant_remainder.reset(new less_than_constant_gadget<FieldT>(pb, num_bits + 1, out, modulus));
-    }
-
-    void generate_r1cs_constraints() {
-        this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(quotient * modulus + out, 1, in1 + in2));
-        // TODO: do we need an additional constraint on the size of out, or is this enough?
-        lt_constant_quotient->generate_r1cs_constraints();
-        lt_constant_remainder->generate_r1cs_constraints();
-    }
-
-    void generate_r1cs_witness() {
-        unsigned long w1 = this->pb.lc_val(in1).as_ulong();
-        unsigned long w2 = this->pb.lc_val(in2).as_ulong();
-        assert(this->pb.lc_val(in1).as_bigint().num_bits() + this->pb.lc_val(in2).as_bigint().num_bits() <=
-               2 * ceil(log2(modulus)));
-
-        this->pb.val(quotient) = (w1 * w2) / modulus;
-        this->pb.val(out)      = (w1 * w2) % modulus;
-
-        lt_constant_quotient->generate_r1cs_witness();
-        lt_constant_remainder->generate_r1cs_witness();
-    }
-};
-
 
 #endif  //OPENFHE_GADGETS_LIBSNARK_H
