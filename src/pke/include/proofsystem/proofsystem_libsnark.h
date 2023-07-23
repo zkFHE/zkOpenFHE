@@ -15,10 +15,10 @@ typedef libff::Fr<default_r1cs_ppzksnark_pp> FieldT;
 class LibsnarkProofMetadata : public ProofMetadata, private vector<vector<vector<pb_linear_combination<FieldT>>>> {
 public:
     vector<size_t> modulus;
-    vector<size_t> curr_bit_size;
+    vector<vector<size_t>> curr_bit_size;
 
-    explicit LibsnarkProofMetadata()
-        : ProofMetadata(), vector<vector<vector<pb_linear_combination<FieldT>>>>(), modulus(0), curr_bit_size(0) {}
+    explicit LibsnarkProofMetadata(size_t n = 0)
+        : ProofMetadata(), vector<vector<vector<pb_linear_combination<FieldT>>>>(n), modulus(0), curr_bit_size(n) {}
 
     explicit LibsnarkProofMetadata(const vector<vector<vector<pb_linear_combination<FieldT>>>>& pb_linear_combinations)
         : ProofMetadata(),
@@ -50,5 +50,9 @@ public:
     static std::shared_ptr<LibsnarkProofMetadata> GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext);
     static void SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext,
                                  const std::shared_ptr<LibsnarkProofMetadata>& metadata);
+    void constrain_addmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
+                               const size_t index_2, LibsnarkProofMetadata& out, const size_t index_out);
+    void constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
+                               const size_t index_2, LibsnarkProofMetadata& out, const size_t index_out);
 };
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H

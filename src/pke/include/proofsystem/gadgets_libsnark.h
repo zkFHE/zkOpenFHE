@@ -147,14 +147,96 @@ public:
     }
 };
 
+template <typename FieldT>
+class MulGadget : public gadget<FieldT> {
+public:
+    pb_linear_combination<FieldT> in1, in2;
+    pb_linear_combination<FieldT> out;
+    pb_variable<FieldT> tmp;
+
+    MulGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const pb_linear_combination<FieldT> in2,
+              const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, annotationPrefix), in1(in1), in2(in2) {
+        if (in1.is_constant()) {
+            out.assign(pb, in1.constant_term() * in2);
+        }
+        else if (in2.is_constant()) {
+            out.assign(pb, in1 * in2.constant_term());
+        }
+        else {
+            tmp.allocate(pb);
+            out.assign(pb, tmp);
+        }
+    }
+
+    void generate_r1cs_constraints() {
+        if (!in1.is_constant() && !in2.is_constant()) {
+            this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(in1, in2, out));
+        }
+    }
+
+    void generate_r1cs_witness() {
+        if (!in1.is_constant() && !in2.is_constant()) {
+            this->pb.val(tmp) = this->pb.lc_val(in1) * this->pb.lc_val(in2);
+        }
+    }
+};
+
 template <typename FieldT, typename Gadget>
 class BatchGadget : gadget<FieldT> {
 public:
+    vector<Gadget> gadgets;
+
+    BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in1,
+                const vector<pb_linear_combination<FieldT>>& in2, const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, annotationPrefix) {
+        assert(in1.size() == in2.size());
+        gadgets.reserve(in1.size());
+        for (size_t i = 0; i < in1.size(); ++i) {
+            gadgets.emplace_back(pb, in1[i], in2[i]);
+        }
+    }
+
+    BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in1,
+                const vector<pb_linear_combination<FieldT>>& in2, const size_t& modulus,
+                const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, annotationPrefix) {
+        assert(in1.size() == in2.size());
+        gadgets.reserve(in1.size());
+        for (size_t i = 0; i < in1.size(); ++i) {
+            gadgets.emplace_back(pb, in1[i], in2[i], modulus);
+        }
+    }
+
+    void generate_r1cs_constraints() {
+        for (auto& g_i : gadgets) {
+            g_i.generate_r1cs_constraints();
+        }
+    }
+
+    void generate_r1cs_witness() {
+        for (auto& g_i : gadgets) {
+            g_i.generate_r1cs_witness();
+        }
+    }
+
+    vector<pb_linear_combination<FieldT>> get_output() {
+        vector<pb_linear_combination<FieldT>> out(gadgets.size());
+        for (size_t i = 0; i < gadgets.size(); ++i) {
+            out[i] = gadgets[i].out;
+        }
+        return out;
+    }
+};
+
+template <typename FieldT, typename Gadget>
+class DoubleBatchGadget : gadget<FieldT> {
+public:
     vector<vector<Gadget>> gadgets;
 
-    BatchGadget(protoboard<FieldT>& pb, const vector<vector<pb_linear_combination<FieldT>>>& in1,
-                const vector<vector<pb_linear_combination<FieldT>>>& in2, const vector<size_t>& modulus,
-                const std::string& annotationPrefix = "")
+    DoubleBatchGadget(protoboard<FieldT>& pb, const vector<vector<pb_linear_combination<FieldT>>>& in1,
+                      const vector<vector<pb_linear_combination<FieldT>>>& in2, const vector<size_t>& modulus,
+                      const std::string& annotationPrefix = "")
         : gadget<FieldT>(pb, annotationPrefix) {
         assert(in1.size() == in2.size());
         assert(in1.size() == modulus.size());
