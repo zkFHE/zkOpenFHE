@@ -70,53 +70,16 @@ void less_than_constant_gadget<FieldT>::generate_r1cs_witness() {
 }
 
 template <typename FieldT>
-class AddModGadget : public gadget<FieldT> {
-public:
-    std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant;
-    size_t modulus;
-    pb_linear_combination<FieldT> in1, in2;
-    pb_variable<FieldT> out, quotient;
-
-    AddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1,
-                 const pb_linear_combination<FieldT> in2, size_t modulus, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in1), in2(in2) {
-        const size_t num_bits = ceil(log2(modulus));
-        out.allocate(pb);
-        quotient.allocate(pb);
-        lt_constant.reset(new less_than_constant_gadget<FieldT>(pb, num_bits + 1, out, modulus));
-    }
-
-    void generate_r1cs_constraints() {
-        this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(quotient * modulus + out, 1, in1 + in2));
-        this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(quotient, 1 - pb_linear_combination<FieldT>(quotient), 0));
-        // TODO: do we need an additional constraint on the size of out, or is this enough?
-        lt_constant->generate_r1cs_constraints();
-    }
-
-    void generate_r1cs_witness() {
-        assert(std::max(this->pb.lc_val(in1).as_bigint().num_bits(), this->pb.lc_val(in2).as_bigint().num_bits()) <
-               modulus);
-        unsigned long w1 = this->pb.lc_val(in1).as_ulong();
-        unsigned long w2 = this->pb.lc_val(in2).as_ulong();
-
-        this->pb.val(quotient) = (w1 + w2) / modulus;
-        this->pb.val(out)      = (w1 + w2) % modulus;
-
-        lt_constant->generate_r1cs_witness();
-    }
-};
-
-template <typename FieldT>
-class MulModGadget : public gadget<FieldT> {
-public:
+class ModGadget : public gadget<FieldT> {
+protected:
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_quotient;
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_remainder;
     size_t modulus;
     pb_linear_combination<FieldT> in1, in2;
-    pb_variable<FieldT> out, quotient;
+    pb_variable<FieldT> quotient;
 
-    MulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1,
-                 const pb_linear_combination<FieldT> in2, size_t modulus, const std::string& annotationPrefix = "")
+    ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const pb_linear_combination<FieldT> in2,
+              size_t modulus, const std::string& annotationPrefix = "")
         : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in1), in2(in2) {
         const size_t num_bits = ceil(log2(modulus));
         out.allocate(pb);
@@ -126,8 +89,15 @@ public:
         lt_constant_remainder.reset(new less_than_constant_gadget<FieldT>(pb, num_bits + 1, out, modulus));
     }
 
+public:
+    pb_variable<FieldT> out;
+
+    ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
+              const std::string& annotationPrefix = "")
+        : ModGadget(pb, in, pb_linear_combination<FieldT>(1), modulus, annotationPrefix) {}
+
     void generate_r1cs_constraints() {
-        this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(quotient * modulus + out, 1, in1 + in2));
+        this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(in1, in2, quotient * modulus + out));
         // TODO: do we need an additional constraint on the size of out, or is this enough?
         lt_constant_quotient->generate_r1cs_constraints();
         lt_constant_remainder->generate_r1cs_constraints();
@@ -145,6 +115,35 @@ public:
         lt_constant_quotient->generate_r1cs_witness();
         lt_constant_remainder->generate_r1cs_witness();
     }
+};
+
+template <typename FieldT>
+class AddModGadget : public ModGadget<FieldT> {
+protected:
+    inline pb_linear_combination<FieldT> add(protoboard<FieldT> pb, const pb_linear_combination<FieldT> in1,
+                                             const pb_linear_combination<FieldT> in2) {
+        pb_linear_combination<FieldT> lc;
+        lc.assign(pb, in1 + in2);
+        return lc;
+    }
+
+public:
+    AddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1,
+                 const pb_linear_combination<FieldT> in2, size_t modulus, const std::string& annotationPrefix = "")
+        //        : ModGadget<FieldT>(pb, pb_linear_combination<FieldT>(in1 + in2), modulus, annotationPrefix) {
+        : ModGadget<FieldT>(pb, add(pb, in1, in2), modulus, annotationPrefix) {}
+    AddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
+                 const std::string& annotationPrefix = "") = delete;
+};
+
+template <typename FieldT>
+class MulModGadget : public ModGadget<FieldT> {
+public:
+    MulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1,
+                 const pb_linear_combination<FieldT> in2, size_t modulus, const std::string& annotationPrefix = "")
+        : ModGadget<FieldT>(pb, in1, in2, modulus, annotationPrefix) {}
+    MulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
+                 const std::string& annotationPrefix = "") = delete;
 };
 
 template <typename FieldT>
