@@ -196,6 +196,72 @@ void LibsnarkProofSystem::ConstrainMultiplication(const Ciphertext<DCRTPoly>& ct
     constrain_addmod_lazy(in1, 0, in2, 0, out, 0);
     constrain_addmod_lazy(tmp, 0, tmp, 1, out, 1);
     constrain_addmod_lazy(in1, 1, in2, 1, out, 2);
+    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
+}
+
+std::shared_ptr<LibsnarkProofMetadata> LibsnarkProofSystem::ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext) {
+    auto out           = std::make_shared<LibsnarkProofMetadata>(ciphertext->GetElements().size());
+    out->modulus       = vector<size_t>(ciphertext->GetElements().size());
+    out->curr_bit_size = vector<vector<size_t>>(ciphertext->GetElements().size());
+
+    for (size_t j = 0; j < ciphertext->GetElements()[0].GetNumOfElements(); j++) {
+        out->modulus[j] = ciphertext->GetElements()[0].GetElementAtIndex(j).GetModulus().ConvertToInt<unsigned long>();
+    }
+
+    for (size_t i = 0; i < ciphertext->GetElements().size(); i++) {
+        const auto c_i        = ciphertext->GetElements()[i];
+        out->operator[](i)    = vector<vector<pb_linear_combination<FieldT>>>(c_i.GetNumOfElements());
+        out->curr_bit_size[i] = vector<size_t>(c_i.GetNumOfElements());
+        for (size_t j = 0; j < c_i.GetNumOfElements(); j++) {
+            const auto c_ij          = c_i.GetElementAtIndex(j);
+            const auto& v_ij         = c_ij.GetValues();
+            out->operator[](i)[j]    = vector<pb_linear_combination<FieldT>>(v_ij.GetLength());
+            out->curr_bit_size[i][j] = c_ij.GetModulus().GetMSB();
+
+            for (size_t k = 0; k < v_ij.GetLength(); k++) {
+                pb_variable<FieldT> tmp;
+                tmp.allocate(pb);
+                out->operator[](i)[j][k] = pb_linear_combination<FieldT>(tmp);
+            }
+        }
+    }
+
+    pb.set_input_sizes(pb.num_inputs() + (out->size() * out->operator[](0).size() * out->operator[](0)[0].size()));
+    return out;
+}
+void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkProofMetadata& out_vars) {
+    // ctxt holds metadata for the output of the computation, vars holds the (public input) variables allocated at the beginning of the computation
+    // We resolve all pending lazy mod-reductions, and add constraints binding vars to the output of the computation
+    auto out             = *GetProofMetadata(ctxt);
+    const auto num_limbs = out.modulus.size();
+    const auto modulus   = out.modulus;
+
+    assert(ctxt->GetElements().size() == out_vars.size());
+    for (size_t i = 0; i < ctxt->GetElements().size(); ++i) {
+        auto c_i = ctxt->GetElements()[i];
+        for (size_t j = 0; j < c_i.GetNumOfElements(); ++j) {
+            auto c_ij            = c_i.GetElementAtIndex(j);
+            bool needs_reduction = out.curr_bit_size[i][j] >= out.modulus[j];
+            vector<pb_variable<FieldT>> vars(out[i][j].size());
+            for (const auto& x : out_vars[i][j]) {
+                assert(x.is_variable);
+                vars.emplace_back(x.terms[0].index);
+            }
+            if (needs_reduction) {
+                for (size_t k = 0; k < c_ij.GetLength(); ++k) {
+                    auto g = BatchGadget<FieldT, ModAssignGadget<FieldT>>(pb, out[i][j], modulus[j], vars);
+                    g.generate_r1cs_constraints();
+                    g.generate_r1cs_witness();
+                    out.curr_bit_size[i][j] = ceil(log2(out.modulus[j]));
+                }
+            }
+            else {
+                for (size_t k = 0; k < c_ij.GetLength(); ++k) {
+                    pb.add_r1cs_constraint(r1cs_constraint<FieldT>(out[i][j][k], 1, vars[k]));
+                }
+            }
+        }
+    }
 }
 
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_CPP

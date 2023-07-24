@@ -79,6 +79,16 @@ protected:
     pb_variable<FieldT> quotient;
 
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const pb_linear_combination<FieldT> in2,
+              size_t modulus, const pb_variable<FieldT> out, const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in1), in2(in2), out(out) {
+        const size_t num_bits = ceil(log2(modulus));
+        quotient.allocate(pb);
+        // a, b < modulus ==> a*b = quotient * modulus + out and quotient < modulus
+        lt_constant_quotient.reset(new less_than_constant_gadget<FieldT>(pb, num_bits + 1, quotient, modulus));
+        lt_constant_remainder.reset(new less_than_constant_gadget<FieldT>(pb, num_bits + 1, out, modulus));
+    }
+
+    ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const pb_linear_combination<FieldT> in2,
               size_t modulus, const std::string& annotationPrefix = "")
         : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in1), in2(in2) {
         const size_t num_bits = ceil(log2(modulus));
@@ -115,6 +125,14 @@ public:
         lt_constant_quotient->generate_r1cs_witness();
         lt_constant_remainder->generate_r1cs_witness();
     }
+};
+
+template <typename FieldT>
+class ModAssignGadget : public ModGadget<FieldT> {
+public:
+    ModAssignGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
+                    const pb_variable<FieldT> out, const std::string& annotationPrefix = "")
+        : ModGadget<FieldT>(pb, in, pb_linear_combination<FieldT>(1), modulus, out, annotationPrefix) {}
 };
 
 template <typename FieldT>
@@ -186,6 +204,25 @@ class BatchGadget : gadget<FieldT> {
 public:
     vector<Gadget> gadgets;
 
+    BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in, const size_t& modulus,
+                const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, annotationPrefix) {
+        gadgets.reserve(in.size());
+        for (size_t i = 0; i < in.size(); ++i) {
+            gadgets.emplace_back(pb, in[i], modulus);
+        }
+    }
+
+    BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in, const size_t& modulus,
+                const vector<pb_variable<FieldT>>& out, const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, annotationPrefix) {
+        assert(in.size() == out.size());
+        gadgets.reserve(in.size());
+        for (size_t i = 0; i < in.size(); ++i) {
+            gadgets.emplace_back(pb, in[i], modulus, out[i]);
+        }
+    }
+
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in1,
                 const vector<pb_linear_combination<FieldT>>& in2, const std::string& annotationPrefix = "")
         : gadget<FieldT>(pb, annotationPrefix) {
@@ -221,6 +258,14 @@ public:
 
     vector<pb_linear_combination<FieldT>> get_output() {
         vector<pb_linear_combination<FieldT>> out(gadgets.size());
+        for (size_t i = 0; i < gadgets.size(); ++i) {
+            out[i] = gadgets[i].out;
+        }
+        return out;
+    }
+
+    vector<pb_variable<FieldT>> get_output_vars() {
+        vector<pb_variable<FieldT>> out(gadgets.size());
         for (size_t i = 0; i < gadgets.size(); ++i) {
             out[i] = gadgets[i].out;
         }

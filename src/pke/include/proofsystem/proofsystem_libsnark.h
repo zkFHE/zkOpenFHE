@@ -15,6 +15,7 @@ typedef libff::Fr<default_r1cs_ppzksnark_pp> FieldT;
 class LibsnarkProofMetadata : public ProofMetadata, private vector<vector<vector<pb_linear_combination<FieldT>>>> {
 public:
     vector<size_t> modulus;
+    // TODO: track exact modulus instead for precision, using bit sizes might add one unecessary final modular reduction
     vector<vector<size_t>> curr_bit_size;
 
     explicit LibsnarkProofMetadata(size_t n = 0)
@@ -43,10 +44,15 @@ public:
         pb = protoboard<FieldT>();
     }
     void ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext) override;
+    std::shared_ptr<LibsnarkProofMetadata> ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext);
     void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                            Ciphertext<DCRTPoly>& ctxt_out) override;
     void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                  Ciphertext<DCRTPoly>& ctxt_out) override;
+    void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
+        FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkProofMetadata&>(vars));
+    }
+    void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkProofMetadata& out_vars);
     static std::shared_ptr<LibsnarkProofMetadata> GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext);
     static void SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext,
                                  const std::shared_ptr<LibsnarkProofMetadata>& metadata);
