@@ -28,45 +28,58 @@ public:
     const FieldT B;
     pb_variable<FieldT> less_or_eq;
 
+    // alpha[n] is less_or_eq
+
     less_than_constant_gadget(protoboard<FieldT>& pb, const size_t n, const pb_linear_combination<FieldT>& A,
                               const FieldT& B, const std::string& annotation_prefix = "")
-        : gadget<FieldT>(pb, annotation_prefix), n(n), A(A), B(B) {
-        less_or_eq.allocate(pb);
-        alpha.allocate(pb, n);
-        alpha.emplace_back(less_or_eq);  // alpha[n] is less_or_eq
+        : gadget<FieldT>(pb, annotation_prefix + "::less_than_constant_gadget"), n(n), A(A), B(B) {
+        assert(
+            B != 0 &&
+            "constraint 'A < 0' cannot be handled by less_than_constant_gadget (and not very meaningful on the modular field), use a custom constraint 'A != 0' instead");
+        alpha.allocate(pb, n, annotation_prefix + "::less_than_constant_gadget::alpha");
+        less_or_eq.allocate(pb, annotation_prefix + "::less_than_constant_gadget::less_or_eq");
+        alpha.emplace_back(less_or_eq);
 
-        alpha_packed.allocate(pb);
+        alpha_packed.allocate(pb, annotation_prefix + "::less_than_constant_gadget::alpha_packed");
 
-        pack_alpha.reset(new packing_gadget<FieldT>(pb, alpha, alpha_packed));
+        pack_alpha.reset(new packing_gadget<FieldT>(pb, alpha, alpha_packed,
+                                                    annotation_prefix + "::less_than_constant_gadget::less_or_eq"));
     };
 
     void generate_r1cs_constraints();
-    void generate_r1cs_witness();
+    void generate_r1cs_witness(bool assert_strict = true);
 };
 
 template <typename FieldT>
 void less_than_constant_gadget<FieldT>::generate_r1cs_constraints() {
-    /* constraints for packed(alpha) = 2^n + B - A */
     pack_alpha->generate_r1cs_constraints(true);
-    this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(1, (FieldT(2) ^ n) + (B - 1) - A, alpha_packed));
+    this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(1, (FieldT(2) ^ n) + (B - 1) - A, alpha_packed),
+                                 this->annotation_prefix + "::less_than_constant_gadget");
+    this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(1, less_or_eq, 1),
+                                 this->annotation_prefix + "::less_than_constant_gadget");
 }
 
 template <typename FieldT>
-void less_than_constant_gadget<FieldT>::generate_r1cs_witness() {
+void less_than_constant_gadget<FieldT>::generate_r1cs_witness(bool assert_strict) {
     A.evaluate(this->pb);
-    assert(B.as_bigint().num_bits() < n && "assumption that B has n bits violated in less_than_constant_gadget");
-    // TODO: add assert for exact comparison A < B, not only by comparing bit-sizes
-    assert(this->pb.lc_val(A).as_bigint().num_bits() <= B.as_bigint().num_bits() &&
-           "less_than_constant constraint does not hold");
+    assert((B - 1).as_bigint().num_bits() < n && "assumption B-1 < 2^n bits violated in less_than_constant_gadget");
+    assert(this->pb.lc_val(A).as_bigint().num_bits() < n &&
+           "assumption A < 2^n bits violated in less_than_constant_gadget");
+    if (assert_strict) {
+        //         TODO: add assert for exact comparison A < B, not only by comparing bit-sizes
+        assert(this->pb.lc_val(A).as_bigint().num_bits() > (B - 1).as_bigint().num_bits() &&
+               "less_than_constant constraint does not hold");
+    }
 
-    /* unpack 2^n + B - A into alpha_packed */
     this->pb.val(alpha_packed) = (FieldT(2) ^ n) + (B - 1) - this->pb.lc_val(A);
     pack_alpha->generate_r1cs_witness_from_packed();
 
     // We fix less_or_eq == alpha[n] to be 1
-    assert(this->pb.val(less_or_eq) == 1 &&
-           "less_or_eq bit is not set to 1 with current assignment, constraints will not be satisfied");
-    this->pb.val(less_or_eq) = 1;
+    if (assert_strict) {
+        assert(this->pb.val(less_or_eq) == 1 &&
+               "less_or_eq bit is not set to 1 with current assignment, constraints will not be satisfied");
+    }
+    //    this->pb.val(less_or_eq) = 1;
 }
 
 template <typename FieldT>
