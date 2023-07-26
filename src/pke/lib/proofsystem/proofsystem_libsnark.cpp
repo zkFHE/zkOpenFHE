@@ -48,7 +48,8 @@ void LibsnarkProofSystem::ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext)
 
             for (size_t k = 0; k < v_ij.GetLength(); k++) {
                 pb_variable<FieldT> tmp;
-                tmp.allocate(pb);
+                tmp.allocate(pb, ciphertext->SerializedObjectName() + "[" + std::to_string(i) + "][" +
+                                     std::to_string(j) + "][" + std::to_string(k) + "] (input)");
                 pb.val(tmp)              = v_ij[k].ConvertToInt<unsigned long>();
                 out->operator[](i)[j][k] = pb_linear_combination<FieldT>(tmp);
             }
@@ -224,7 +225,8 @@ std::shared_ptr<LibsnarkProofMetadata> LibsnarkProofSystem::ConstrainPublicOutpu
 
             for (size_t k = 0; k < v_ij.GetLength(); k++) {
                 pb_variable<FieldT> tmp;
-                tmp.allocate(pb);
+                tmp.allocate(pb, ciphertext->SerializedObjectName() + "[" + std::to_string(i) + "][" +
+                                     std::to_string(j) + "][" + std::to_string(k) + "] (output)");
                 out->operator[](i)[j][k] = pb_linear_combination<FieldT>(tmp);
             }
         }
@@ -237,8 +239,8 @@ std::shared_ptr<LibsnarkProofMetadata> LibsnarkProofSystem::ConstrainPublicOutpu
 void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkProofMetadata& out_vars) {
     // ctxt holds metadata for the output of the computation, vars holds the (public input) variables allocated at the beginning of the computation
     // We resolve all pending lazy mod-reductions, and add constraints binding vars to the output of the computation
-    auto out             = *GetProofMetadata(ctxt);
-    const auto modulus   = out.modulus;
+    auto out           = *GetProofMetadata(ctxt);
+    const auto modulus = out.modulus;
 
     assert(ctxt->GetElements().size() == out_vars.size());
     for (size_t i = 0; i < ctxt->GetElements().size(); ++i) {
@@ -253,7 +255,8 @@ void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, 
             }
             if (needs_reduction) {
                 for (size_t k = 0; k < c_ij.GetLength(); ++k) {
-                    auto g = BatchGadget<FieldT, ModAssignGadget<FieldT>>(pb, out[i][j], out.curr_bit_size[i][j], modulus[j], vars);
+                    auto g = BatchGadget<FieldT, ModAssignGadget<FieldT>>(pb, out[i][j], out.curr_bit_size[i][j],
+                                                                          modulus[j], vars);
                     g.generate_r1cs_constraints();
                     g.generate_r1cs_witness();
                     out.curr_bit_size[i][j] = ceil(log2(out.modulus[j]));
@@ -261,7 +264,9 @@ void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, 
             }
             else {
                 for (size_t k = 0; k < c_ij.GetLength(); ++k) {
-                    pb.add_r1cs_constraint(r1cs_constraint<FieldT>(out[i][j][k], 1, vars[k]));
+                    pb.add_r1cs_constraint(r1cs_constraint<FieldT>(out[i][j][k], 1, vars[k]),
+                                           "finalize_output_constraints[" + std::to_string(i) + "][" +
+                                               std::to_string(j) + "][" + std::to_string(k) + "]");
                 }
             }
         }

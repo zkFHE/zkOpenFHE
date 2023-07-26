@@ -199,7 +199,8 @@ class ModAssignGadget : public ModGadget<FieldT> {
 public:
     ModAssignGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const size_t in_bit_size,
                     size_t modulus, const pb_variable<FieldT> out, const std::string& annotationPrefix = "")
-        : ModGadget<FieldT>(pb, in, in_bit_size, pb_linear_combination<FieldT>(1), 1, modulus, out, annotationPrefix) {}
+        : ModGadget<FieldT>(pb, in, in_bit_size, pb_linear_combination<FieldT>(1), 1, modulus, out,
+                            FMT(annotationPrefix, "::mod_assign")) {}
 };
 
 template <typename FieldT>
@@ -217,7 +218,7 @@ public:
                  const pb_linear_combination<FieldT> in2, const size_t in2_bit_size, size_t modulus,
                  const std::string& annotationPrefix = "")
         : ModGadget<FieldT>(pb, add(pb, in1, in2), std::max(in1_bit_size, in2_bit_size) + 1, modulus,
-                            annotationPrefix) {}
+                            FMT(annotationPrefix, "add_mod")) {}
     AddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
                  const std::string& annotationPrefix = "") = delete;
 };
@@ -228,7 +229,7 @@ public:
     MulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const size_t in1_bit_size,
                  const pb_linear_combination<FieldT> in2, const size_t in2_bit_size, size_t modulus,
                  const std::string& annotationPrefix = "")
-        : ModGadget<FieldT>(pb, in1, in1_bit_size, in2, in2_bit_size, modulus, annotationPrefix) {}
+        : ModGadget<FieldT>(pb, in1, in1_bit_size, in2, in2_bit_size, modulus, FMT(annotationPrefix, "mul_mod")) {}
     MulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
                  const std::string& annotationPrefix = "") = delete;
 };
@@ -251,14 +252,14 @@ public:
             out.assign(pb, in1 * in2.constant_term());
         }
         else {
-            tmp.allocate(pb);
+            tmp.allocate(pb, FMT(this->annotation_prefix, "::tmp"));
             out.assign(pb, tmp);
         }
     }
 
     void generate_r1cs_constraints() {
         if (!in1.is_constant() && !in2.is_constant()) {
-            this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(in1, in2, out));
+            this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(in1, in2, out), FMT(this->annotation_prefix, "::mul_constraint"));
         }
     }
 
@@ -278,41 +279,44 @@ public:
 
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in, const size_t in_bit_size,
                 const size_t& modulus, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, annotationPrefix) {
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "::batch_gadget")) {
         gadgets.reserve(in.size());
         for (size_t i = 0; i < in.size(); ++i) {
-            gadgets.emplace_back(pb, in[i], in_bit_size, modulus);
+            gadgets.emplace_back(pb, in[i], in_bit_size, modulus,
+                                 FMT(this->annotation_prefix, ("[" + std::to_string(i) + "]").c_str()));
         }
     }
 
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in, const size_t in_bit_size,
                 const size_t& modulus, const vector<pb_variable<FieldT>>& out, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, annotationPrefix) {
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "::batch_gadget")) {
         assert(in.size() == out.size());
         gadgets.reserve(in.size());
         for (size_t i = 0; i < in.size(); ++i) {
-            gadgets.emplace_back(pb, in[i], in_bit_size, modulus, out[i]);
+            gadgets.emplace_back(pb, in[i], in_bit_size, modulus, out[i],
+                                 FMT(this->annotation_prefix, ("[" + std::to_string(i) + "]").c_str()));
         }
     }
 
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in1,
                 const vector<pb_linear_combination<FieldT>>& in2, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, annotationPrefix) {
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "::BatchGadget")) {
         assert(in1.size() == in2.size());
         gadgets.reserve(in1.size());
         for (size_t i = 0; i < in1.size(); ++i) {
-            gadgets.emplace_back(pb, in1[i], in2[i]);
+            gadgets.emplace_back(pb, in1[i], in2[i],  FMT(this->annotation_prefix, ("[" + std::to_string(i) + "]").c_str()));
         }
     }
 
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in1, const size_t in1_bit_size,
                 const vector<pb_linear_combination<FieldT>>& in2, const size_t in2_bit_size, const size_t& modulus,
                 const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, annotationPrefix) {
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "::BatchGadget")) {
         assert(in1.size() == in2.size());
         gadgets.reserve(in1.size());
         for (size_t i = 0; i < in1.size(); ++i) {
-            gadgets.emplace_back(pb, in1[i], in1_bit_size, in2[i], in2_bit_size, modulus);
+            gadgets.emplace_back(pb, in1[i], in1_bit_size, in2[i], in2_bit_size, modulus,
+                                 FMT(this->annotation_prefix, ("[" + std::to_string(i) + "]").c_str()));
         }
     }
 
@@ -353,7 +357,7 @@ public:
     DoubleBatchGadget(protoboard<FieldT>& pb, const vector<vector<pb_linear_combination<FieldT>>>& in1,
                       const vector<vector<pb_linear_combination<FieldT>>>& in2, const vector<size_t>& modulus,
                       const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, annotationPrefix) {
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "::DoubleBatchGadget")) {
         assert(in1.size() == in2.size());
         assert(in1.size() == modulus.size());
         gadgets.reserve(in1.size());
@@ -363,7 +367,7 @@ public:
             gadgets[i].reserve(in1[i].size());
 
             for (size_t j = 0; j < in1[i].size(); ++j) {
-                gadgets[i].emplace_back(pb, in1[i][j], in2[i][j], modulus[i]);
+                gadgets[i].emplace_back(pb, in1[i][j], in2[i][j], modulus[i], FMT(this->annotation_prefix, ("[" + std::to_string(i) + "][" + std::to_string(j) + "]").c_str()));
             }
         }
     }
