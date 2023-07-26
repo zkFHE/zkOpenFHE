@@ -83,7 +83,9 @@ void LibsnarkProofSystem::constrain_addmod_lazy(const LibsnarkProofMetadata& in1
     for (size_t j = 0; j < num_limbs; ++j) {
         if (field_overflow[j]) {
             // Eager witness generation, add modulus constraints
-            auto g = BatchGadget<FieldT, AddModGadget<FieldT>>(pb, in1[index_1][j], in2[index_2][j], modulus[j]);
+            auto g =
+                BatchGadget<FieldT, AddModGadget<FieldT>>(pb, in1[index_1][j], in1.curr_bit_size[index_1][j],
+                                                          in2[index_2][j], in2.curr_bit_size[index_2][j], modulus[j]);
             g.generate_r1cs_constraints();
             g.generate_r1cs_witness();
             out[index_out][j]               = g.get_output();
@@ -124,7 +126,9 @@ void LibsnarkProofSystem::constrain_mulmod_lazy(const LibsnarkProofMetadata& in1
     for (size_t j = 0; j < num_limbs; ++j) {
         if (field_overflow[j]) {
             // Eager witness generation, add modulus constraints
-            auto g = BatchGadget<FieldT, MulModGadget<FieldT>>(pb, in1[index_1][j], in2[index_2][j], modulus[j]);
+            auto g =
+                BatchGadget<FieldT, MulModGadget<FieldT>>(pb, in1[index_1][j], in1.curr_bit_size[index_1][j],
+                                                          in2[index_2][j], in2.curr_bit_size[index_2][j], modulus[j]);
             g.generate_r1cs_constraints();
             g.generate_r1cs_witness();
             out[index_out][j]               = g.get_output();
@@ -229,11 +233,11 @@ std::shared_ptr<LibsnarkProofMetadata> LibsnarkProofSystem::ConstrainPublicOutpu
     pb.set_input_sizes(pb.num_inputs() + (out->size() * out->operator[](0).size() * out->operator[](0)[0].size()));
     return out;
 }
+
 void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkProofMetadata& out_vars) {
     // ctxt holds metadata for the output of the computation, vars holds the (public input) variables allocated at the beginning of the computation
     // We resolve all pending lazy mod-reductions, and add constraints binding vars to the output of the computation
     auto out             = *GetProofMetadata(ctxt);
-    const auto num_limbs = out.modulus.size();
     const auto modulus   = out.modulus;
 
     assert(ctxt->GetElements().size() == out_vars.size());
@@ -249,7 +253,7 @@ void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, 
             }
             if (needs_reduction) {
                 for (size_t k = 0; k < c_ij.GetLength(); ++k) {
-                    auto g = BatchGadget<FieldT, ModAssignGadget<FieldT>>(pb, out[i][j], modulus[j], vars);
+                    auto g = BatchGadget<FieldT, ModAssignGadget<FieldT>>(pb, out[i][j], out.curr_bit_size[i][j], modulus[j], vars);
                     g.generate_r1cs_constraints();
                     g.generate_r1cs_witness();
                     out.curr_bit_size[i][j] = ceil(log2(out.modulus[j]));
