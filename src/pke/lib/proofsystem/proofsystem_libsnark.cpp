@@ -247,20 +247,20 @@ void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, 
         auto c_i = ctxt->GetElements()[i];
         for (size_t j = 0; j < c_i.GetNumOfElements(); ++j) {
             auto c_ij            = c_i.GetElementAtIndex(j);
-            bool needs_reduction = out.curr_bit_size[i][j] >= out.modulus[j];
-            vector<pb_variable<FieldT>> vars(out[i][j].size());
+            bool needs_reduction = out.curr_bit_size[i][j] >= ceil(log2(out.modulus[j]));
+            vector<pb_variable<FieldT>> vars;
+            vars.reserve(out[i][j].size());
             for (const auto& x : out_vars[i][j]) {
                 assert(x.is_variable);
                 vars.emplace_back(x.terms[0].index);
             }
             if (needs_reduction) {
-                for (size_t k = 0; k < c_ij.GetLength(); ++k) {
-                    auto g = BatchGadget<FieldT, ModAssignGadget<FieldT>>(pb, out[i][j], out.curr_bit_size[i][j],
-                                                                          modulus[j], vars);
-                    g.generate_r1cs_constraints();
-                    g.generate_r1cs_witness();
-                    out.curr_bit_size[i][j] = ceil(log2(out.modulus[j]));
-                }
+                auto g = BatchGadget<FieldT, ModAssignGadget<FieldT>>(
+                    pb, out[i][j], out.curr_bit_size[i][j], modulus[j], vars,
+                    "finalize_output_constraints[" + std::to_string(i) + "][" + std::to_string(j) + "]");
+                g.generate_r1cs_constraints();
+                g.generate_r1cs_witness();
+                out.curr_bit_size[i][j] = ceil(log2(out.modulus[j]));
             }
             else {
                 for (size_t k = 0; k < c_ij.GetLength(); ++k) {

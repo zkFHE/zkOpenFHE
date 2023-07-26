@@ -122,19 +122,22 @@ protected:
         FieldT in1_max_value = ((FieldT(2) ^ (in1_bit_size)) - 1);
         FieldT in2_max_value = ((FieldT(2) ^ (in2_bit_size)) - 1);
         if (in1.is_constant()) {
+            assert(in2_bit_size + in1.constant_term().as_bigint().num_bits() < FieldT::num_bits);
             max_in_value = (in2_max_value * in1.constant_term());
         }
         else if (in2.is_constant()) {
+            assert(in1_bit_size + in2.constant_term().as_bigint().num_bits() < FieldT::num_bits);
             max_in_value = (in1_max_value * in2.constant_term());
         }
         else {
+            assert(in1_bit_size + in2_bit_size < FieldT::num_bits);
             max_in_value = (in1_max_value * in2_max_value);
         }
-        assert(max_in_value.as_bigint().num_bits() < FieldT::num_bits &&
-               "multiplication of in1 and in2 might overflow w.r.t. field modulus");
+
         assert(
             max_in_value.as_bigint().num_bits() >= modulus_bit_size &&
             "unnecessary mod reduction gadget");  // Needed, as otherwise we cannot instantiate `lt_constant_quotient` gadget with `max_quotient_value` == 0
+
         // max_quotient_value does not have to be a very tight upper bound for soundness, we just need to ensure that quotient * modulus does not overflow the field modulus
         // However, we want max_quotient to be a tight upper bound for efficiency, in order to reduce the number of constraints needed for the range check
         max_quotient_value = div(max_in_value, FieldT(modulus));
@@ -143,8 +146,10 @@ protected:
         // a, b < modulus ==> a*b = quotient * modulus + out and quotient < modulus
         // quotient < 2^(1+quotient_bit_size) and out < 2^(1+modulus_bit_size)
         lt_constant_quotient.reset(new less_than_constant_gadget<FieldT>(
-            pb, quotient, (max_quotient_value + 1).as_bigint().num_bits(), max_quotient_value + 1));
-        lt_constant_remainder.reset(new less_than_constant_gadget<FieldT>(pb, out, modulus_bit_size, modulus));
+            pb, quotient, (max_quotient_value + 1).as_bigint().num_bits(), max_quotient_value + 1,
+            FMT(this->annotation_prefix, "::lt_constant_quotient")));
+        lt_constant_remainder.reset(new less_than_constant_gadget<FieldT>(
+            pb, out, modulus_bit_size, modulus, FMT(this->annotation_prefix, "::lt_constant_remainder")));
     }
 
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const size_t in1_bit_size,
@@ -162,6 +167,13 @@ protected:
         init(pb, in1_bit_size, in2_bit_size, assert_strict);
     }
 
+    ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const size_t in_bit_size, size_t modulus,
+              const pb_variable<FieldT> out, const std::string& annotationPrefix = "", bool assert_strict = true)
+        : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in), out(out) {
+        in2.assign(pb, FieldT(1));
+        init(pb, in_bit_size, 1, assert_strict);
+    }
+
 public:
     pb_variable<FieldT> out;
 
@@ -169,9 +181,7 @@ public:
               const std::string& annotationPrefix = "", bool assert_strict = true)
         : gadget<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")), modulus(modulus), in1(in) {
         out.allocate(pb, FMT(this->annotation_prefix, "::out"));
-        pb_linear_combination<FieldT> lc_one;
-        lc_one.assign(pb, FieldT(1));
-        in2 = lc_one;
+        in2.assign(pb, FieldT(1));
         init(pb, in_bit_size, 1, assert_strict);
     }
 
@@ -199,8 +209,7 @@ class ModAssignGadget : public ModGadget<FieldT> {
 public:
     ModAssignGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const size_t in_bit_size,
                     size_t modulus, const pb_variable<FieldT> out, const std::string& annotationPrefix = "")
-        : ModGadget<FieldT>(pb, in, in_bit_size, pb_linear_combination<FieldT>(1), 1, modulus, out,
-                            FMT(annotationPrefix, "::mod_assign")) {}
+        : ModGadget<FieldT>(pb, in, in_bit_size, modulus, out, FMT(annotationPrefix, "::mod_assign")) {}
 };
 
 template <typename FieldT>
@@ -259,7 +268,8 @@ public:
 
     void generate_r1cs_constraints() {
         if (!in1.is_constant() && !in2.is_constant()) {
-            this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(in1, in2, out), FMT(this->annotation_prefix, "::mul_constraint"));
+            this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(in1, in2, out),
+                                         FMT(this->annotation_prefix, "::mul_constraint"));
         }
     }
 
@@ -304,7 +314,8 @@ public:
         assert(in1.size() == in2.size());
         gadgets.reserve(in1.size());
         for (size_t i = 0; i < in1.size(); ++i) {
-            gadgets.emplace_back(pb, in1[i], in2[i],  FMT(this->annotation_prefix, ("[" + std::to_string(i) + "]").c_str()));
+            gadgets.emplace_back(pb, in1[i], in2[i],
+                                 FMT(this->annotation_prefix, ("[" + std::to_string(i) + "]").c_str()));
         }
     }
 
@@ -367,7 +378,9 @@ public:
             gadgets[i].reserve(in1[i].size());
 
             for (size_t j = 0; j < in1[i].size(); ++j) {
-                gadgets[i].emplace_back(pb, in1[i][j], in2[i][j], modulus[i], FMT(this->annotation_prefix, ("[" + std::to_string(i) + "][" + std::to_string(j) + "]").c_str()));
+                gadgets[i].emplace_back(
+                    pb, in1[i][j], in2[i][j], modulus[i],
+                    FMT(this->annotation_prefix, ("[" + std::to_string(i) + "][" + std::to_string(j) + "]").c_str()));
             }
         }
     }
