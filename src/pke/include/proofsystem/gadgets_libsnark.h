@@ -105,14 +105,14 @@ FieldT mod(FieldT x, FieldT y) {
 template <typename FieldT>
 class ModGadget : public gadget<FieldT> {
 protected:
-    FieldT max_quotient_value;
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_quotient;
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_remainder;
-    const size_t modulus;
     pb_linear_combination<FieldT> in1, in2;
+    const size_t in1_bit_size, in2_bit_size, modulus;
     pb_variable<FieldT> quotient;
+    FieldT max_quotient_value;
 
-    void init(protoboard<FieldT>& pb, size_t in1_bit_size, size_t in2_bit_size, bool assert_strict) {
+    void init(protoboard<FieldT>& pb, bool assert_strict) {
         const size_t modulus_bit_size = ceil(log2(modulus));
 
         FieldT max_in_value;
@@ -155,23 +155,35 @@ protected:
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const size_t in1_bit_size,
               const pb_linear_combination<FieldT> in2, const size_t in2_bit_size, size_t modulus,
               const pb_variable<FieldT> out, const std::string& annotationPrefix = "", bool assert_strict = true)
-        : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in1), in2(in2), out(out) {
+        : gadget<FieldT>(pb, annotationPrefix),
+          modulus(modulus),
+          in1(in1),
+          in1_bit_size(in1_bit_size),
+          in2(in2),
+          in2_bit_size(in2_bit_size),
+          out(out) {
         init(pb, in1_bit_size, in2_bit_size, assert_strict);
     }
 
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const size_t in1_bit_size,
               const pb_linear_combination<FieldT> in2, const size_t in2_bit_size, size_t modulus,
               const std::string& annotationPrefix = "", bool assert_strict = true)
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")), modulus(modulus), in1(in1), in2(in2) {
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")),
+          modulus(modulus),
+          in1(in1),
+          in1_bit_size(in1_bit_size),
+          in2(in2),
+          in2_bit_size(in2_bit_size) {
         out.allocate(pb, FMT(this->annotation_prefix, "::out"));
-        init(pb, in1_bit_size, in2_bit_size, assert_strict);
+        init(pb, assert_strict);
     }
 
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const size_t in_bit_size, size_t modulus,
               const pb_variable<FieldT> out, const std::string& annotationPrefix = "", bool assert_strict = true)
-        : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in), out(out) {
+        : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in), in1_bit_size(in_bit_size), out(out) {
         in2.assign(pb, FieldT(1));
-        init(pb, in_bit_size, 1, assert_strict);
+        in2_bit_size = 1;
+        init(pb, assert_strict);
     }
 
 public:
@@ -179,10 +191,14 @@ public:
 
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const size_t in_bit_size, size_t modulus,
               const std::string& annotationPrefix = "", bool assert_strict = true)
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")), modulus(modulus), in1(in) {
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")),
+          modulus(modulus),
+          in1(in),
+          in1_bit_size(in_bit_size) {
         out.allocate(pb, FMT(this->annotation_prefix, "::out"));
         in2.assign(pb, FieldT(1));
-        init(pb, in_bit_size, 1, assert_strict);
+        in2_bit_size = 1;
+        init(pb, assert_strict);
     }
 
     void generate_r1cs_constraints() {
@@ -196,8 +212,14 @@ public:
         in1.evaluate(this->pb);
         in2.evaluate(this->pb);
 
+        assert(this->pb.lc_val(in1).as_bigint().num_bits() <= in1_bit_size);
+        assert(this->pb.lc_val(in2).as_bigint().num_bits() <= in2_bit_size);
+
         this->pb.val(quotient) = div(this->pb.lc_val(in1) * this->pb.lc_val(in2), FieldT(modulus));
         this->pb.val(out)      = mod(this->pb.lc_val(in1) * this->pb.lc_val(in2), FieldT(modulus));
+
+        assert(this->pb.val(quotient).as_bigint().num_bits() <= max_quotient_value.as_bigint().num_bits());
+        assert(this->pb.val(out).as_bigint().num_bits() <= (size_t)ceil(log2(modulus)));
 
         lt_constant_quotient->generate_r1cs_witness();
         lt_constant_remainder->generate_r1cs_witness();
@@ -229,6 +251,28 @@ public:
         : ModGadget<FieldT>(pb, add(pb, in1, in2), std::max(in1_bit_size, in2_bit_size) + 1, modulus,
                             FMT(annotationPrefix, "add_mod")) {}
     AddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
+                 const std::string& annotationPrefix = "") = delete;
+};
+
+template <typename FieldT>
+class SubModGadget : public ModGadget<FieldT> {
+protected:
+    inline pb_linear_combination<FieldT> sub(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1,
+                                             const pb_linear_combination<FieldT> in2, const size_t modulus) {
+        pb_linear_combination<FieldT> lc;
+        lc.assign(pb, in1 + FieldT(modulus) - in2);
+        return lc;
+    }
+
+public:
+    SubModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const size_t in1_bit_size,
+                 const pb_linear_combination<FieldT> in2, const size_t in2_bit_size, size_t modulus,
+                 const std::string& annotationPrefix = "")
+        : ModGadget<FieldT>(pb, sub(pb, in1, in2, modulus), std::max(in1_bit_size, (size_t)ceil(log2(modulus))) + 1,
+                            modulus, FMT(annotationPrefix, "sub_mod")) {
+        assert(in2_bit_size < (size_t)ceil(log2(modulus)));
+    }
+    SubModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
                  const std::string& annotationPrefix = "") = delete;
 };
 

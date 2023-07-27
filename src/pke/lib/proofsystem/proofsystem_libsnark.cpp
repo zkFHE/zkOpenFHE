@@ -75,13 +75,11 @@ void LibsnarkProofSystem::constrain_addmod_lazy(const LibsnarkProofMetadata& in1
 
     vector<size_t> out_bit_size(num_limbs);
     vector<bool> field_overflow(num_limbs);
+    out.curr_bit_size[index_out] = vector<size_t>(out[index_out].size());
     for (size_t j = 0; j < num_limbs; ++j) {
         out_bit_size[j]   = std::max(in1.curr_bit_size[index_1][j], in2.curr_bit_size[index_2][j]) + 1ul;
         field_overflow[j] = out_bit_size[j] >= FieldT::num_bits;
-    }
 
-    out.curr_bit_size[index_out] = vector<size_t>(out[index_out].size());
-    for (size_t j = 0; j < num_limbs; ++j) {
         if (field_overflow[j]) {
             // Eager witness generation, add modulus constraints
             auto g =
@@ -103,6 +101,63 @@ void LibsnarkProofSystem::constrain_addmod_lazy(const LibsnarkProofMetadata& in1
     }
 }
 
+void LibsnarkProofSystem::constrain_submod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1,
+                                                const LibsnarkProofMetadata& in2, const size_t index_2,
+                                                LibsnarkProofMetadata& out, const size_t index_out) {
+    assert(index_1 < in1.size());
+    assert(index_2 < in2.size());
+    assert(index_out < out.size());
+    auto num_limbs = in1[index_1].size();
+    assert(in2[index_2].size() == num_limbs);
+    assert(out[index_out].size() == num_limbs);
+    auto modulus = in1.modulus;
+    assert(in2.modulus == modulus);
+    assert(out.modulus == modulus && "modulus of `out' is not set");
+
+    vector<size_t> out_bit_size(num_limbs);
+    vector<bool> field_overflow(num_limbs);
+    vector<bool> in2_lt_modulus(num_limbs);
+
+    out.curr_bit_size[index_out] = vector<size_t>(out[index_out].size());
+    for (size_t j = 0; j < num_limbs; ++j) {
+        out_bit_size[j]   = std::max(in1.curr_bit_size[index_1][j], (size_t)ceil(log2(modulus[j]))) + 1ul;
+        field_overflow[j] = out_bit_size[j] >= FieldT::num_bits;
+        in2_lt_modulus[j] = in2.curr_bit_size[index_2][j] < (size_t)ceil(log2(modulus[j]));
+
+        auto in2_ij               = in2[index_2][j];
+        auto in2_ij_curr_bit_size = in2.curr_bit_size[index_2][j];
+        if (!in2_lt_modulus[j]) {
+            // We first need to mod-reduce in2[index_2][j][k] before we can compute its negative
+            // TODO: is there a way to compute the negative from the lazy/non-reduced value directly?
+            auto g_mod =
+                BatchGadget<FieldT, ModGadget<FieldT>>(pb, in2[index_2][j], in2.curr_bit_size[index_2][j], modulus[j]);
+            g_mod.generate_r1cs_constraints();
+            g_mod.generate_r1cs_witness();
+
+            in2_ij               = g_mod.get_output();
+            in2_ij_curr_bit_size = ceil(log2(modulus[j]));
+        }
+
+        if (field_overflow[j]) {
+            // Eager witness generation, add modulus constraints
+            auto g = BatchGadget<FieldT, SubModGadget<FieldT>>(pb, in1[index_1][j], in1.curr_bit_size[index_1][j],
+                                                               in2_ij, in2_ij_curr_bit_size, modulus[j]);
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            out[index_out][j]               = g.get_output();
+            out.curr_bit_size[index_out][j] = ceil(log2(out.modulus[j]));
+        }
+        else {
+            // Lazy branch, do not add modulus constraints, but track size of values for later
+            out[index_out][j] = vector<pb_linear_combination<FieldT>>(in1[index_1][j].size());
+            for (size_t k = 0; k < out[index_out][j].size(); ++k) {
+                out[index_out][j][k].assign(pb, in1[index_1][j][k] + FieldT(modulus[j]) - in2_ij[k]);
+            }
+            out.curr_bit_size[index_out][j] = out_bit_size[j];
+        }
+    }
+}
+
 void LibsnarkProofSystem::constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1,
                                                 const LibsnarkProofMetadata& in2, const size_t index_2,
                                                 LibsnarkProofMetadata& out, const size_t index_out) {
@@ -118,13 +173,11 @@ void LibsnarkProofSystem::constrain_mulmod_lazy(const LibsnarkProofMetadata& in1
 
     vector<size_t> out_bit_size(num_limbs);
     vector<bool> field_overflow(num_limbs);
+    out.curr_bit_size[index_out] = vector<size_t>(num_limbs);
     for (size_t j = 0; j < num_limbs; ++j) {
         out_bit_size[j]   = in1.curr_bit_size[index_1][j] + in2.curr_bit_size[index_2][j];
         field_overflow[j] = out_bit_size[j] >= FieldT::num_bits;
-    }
 
-    out.curr_bit_size[index_out] = vector<size_t>(num_limbs);
-    for (size_t j = 0; j < num_limbs; ++j) {
         if (field_overflow[j]) {
             // Eager witness generation, add modulus constraints
             auto g =
@@ -165,6 +218,29 @@ void LibsnarkProofSystem::ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, c
     for (size_t i = 0; i < in1.size(); i++) {
         out[i] = vector<vector<pb_linear_combination<FieldT>>>(in1[i].size());
         constrain_addmod_lazy(in1, i, in2, i, out, i);
+    }
+    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
+}
+
+void LibsnarkProofSystem::ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
+                                                Ciphertext<DCRTPoly>& ctxt_out) {
+    const auto in1 = *GetProofMetadata(ctxt1);
+    const auto in2 = *GetProofMetadata(ctxt2);
+
+    vector<unsigned long> moduli;
+    for (const auto& e : ctxt_out->GetElements()[0].GetAllElements()) {
+        moduli.push_back(e.GetModulus().ConvertToInt());
+    }
+    assert(in1.size() == in2.size());
+    assert(in1.modulus == in2.modulus);
+    assert(in1.modulus == moduli);
+
+    LibsnarkProofMetadata out(in1.size());
+    out.curr_bit_size = vector<vector<size_t>>(in1.size());
+    out.modulus       = in1.modulus;
+    for (size_t i = 0; i < in1.size(); i++) {
+        out[i] = vector<vector<pb_linear_combination<FieldT>>>(in1[i].size());
+        constrain_submod_lazy(in1, i, in2, i, out, i);
     }
     SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
 }

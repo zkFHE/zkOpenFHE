@@ -47,6 +47,8 @@ public:
     std::shared_ptr<LibsnarkProofMetadata> ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext);
     void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                            Ciphertext<DCRTPoly>& ctxt_out) override;
+    void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
+                               Ciphertext<DCRTPoly>& ctxt_out) override;
     void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                  Ciphertext<DCRTPoly>& ctxt_out) override;
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
@@ -57,6 +59,8 @@ public:
     static void SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext,
                                  const std::shared_ptr<LibsnarkProofMetadata>& metadata);
     void constrain_addmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
+                               const size_t index_2, LibsnarkProofMetadata& out, const size_t index_out);
+    void constrain_submod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
                                const size_t index_2, LibsnarkProofMetadata& out, const size_t index_out);
     void constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
                                const size_t index_2, LibsnarkProofMetadata& out, const size_t index_out);
