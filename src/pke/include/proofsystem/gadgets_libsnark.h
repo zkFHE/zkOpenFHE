@@ -108,7 +108,7 @@ protected:
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_quotient;
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_remainder;
     pb_linear_combination<FieldT> in1, in2;
-    const size_t in1_bit_size, in2_bit_size, modulus;
+    size_t in1_bit_size, in2_bit_size, modulus;
     pb_variable<FieldT> quotient;
     FieldT max_quotient_value;
 
@@ -156,11 +156,11 @@ protected:
               const pb_linear_combination<FieldT> in2, const size_t in2_bit_size, size_t modulus,
               const pb_variable<FieldT> out, const std::string& annotationPrefix = "", bool assert_strict = true)
         : gadget<FieldT>(pb, annotationPrefix),
-          modulus(modulus),
           in1(in1),
           in1_bit_size(in1_bit_size),
           in2(in2),
           in2_bit_size(in2_bit_size),
+          modulus(modulus),
           out(out) {
         init(pb, in1_bit_size, in2_bit_size, assert_strict);
     }
@@ -169,18 +169,20 @@ protected:
               const pb_linear_combination<FieldT> in2, const size_t in2_bit_size, size_t modulus,
               const std::string& annotationPrefix = "", bool assert_strict = true)
         : gadget<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")),
-          modulus(modulus),
           in1(in1),
           in1_bit_size(in1_bit_size),
           in2(in2),
-          in2_bit_size(in2_bit_size) {
+          in2_bit_size(in2_bit_size),
+          modulus(modulus)
+
+    {
         out.allocate(pb, FMT(this->annotation_prefix, "::out"));
         init(pb, assert_strict);
     }
 
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const size_t in_bit_size, size_t modulus,
               const pb_variable<FieldT> out, const std::string& annotationPrefix = "", bool assert_strict = true)
-        : gadget<FieldT>(pb, annotationPrefix), modulus(modulus), in1(in), in1_bit_size(in_bit_size), out(out) {
+        : gadget<FieldT>(pb, annotationPrefix), in1(in), in1_bit_size(in_bit_size), modulus(modulus), out(out) {
         in2.assign(pb, FieldT(1));
         in2_bit_size = 1;
         init(pb, assert_strict);
@@ -192,9 +194,11 @@ public:
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const size_t in_bit_size, size_t modulus,
               const std::string& annotationPrefix = "", bool assert_strict = true)
         : gadget<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")),
-          modulus(modulus),
           in1(in),
-          in1_bit_size(in_bit_size) {
+          in1_bit_size(in_bit_size),
+          modulus(modulus)
+
+    {
         out.allocate(pb, FMT(this->annotation_prefix, "::out"));
         in2.assign(pb, FieldT(1));
         in2_bit_size = 1;
