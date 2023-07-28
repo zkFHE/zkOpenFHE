@@ -269,6 +269,86 @@ public:
 };
 
 template <typename FieldT>
+class LazyAddModGadget : public gadget<FieldT> {
+protected:
+    std::shared_ptr<AddModGadget<FieldT>> add_mod;
+
+public:
+    const pb_linear_combination<FieldT> in1, in2;
+    pb_linear_combination<FieldT> out;
+
+    LazyAddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
+                     const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
+                     const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_add_mod")), in1(in1), in2(in2) {
+        if (1 + std::max(in1_max_value.as_bigint().num_bits(), in2_max_value.as_bigint().num_bits()) >=
+            FieldT::num_bits) {
+            // addition would overflow field modulus, reduce now
+            add_mod.reset(
+                new AddModGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, annotationPrefix));
+            out = add_mod->out;
+        }
+        else {
+            // addition would not overflow field modulus, reduce later
+            out.assign(pb, in1 + in2);
+        }
+    }
+
+    void generate_r1cs_constraints() {
+        if (add_mod) {
+            add_mod->generate_r1cs_constraints();
+        }
+    }
+    void generate_r1cs_witness() {
+        if (add_mod) {
+            add_mod->generate_r1cs_witness();
+        }
+        else {
+            out.evaluate(this->pb);
+        }
+    }
+};
+
+template <typename FieldT>
+class LazySubModGadget : public gadget<FieldT> {
+protected:
+    std::shared_ptr<SubModGadget<FieldT>> sub_mod;
+
+public:
+    const pb_linear_combination<FieldT> in1, in2;
+    pb_linear_combination<FieldT> out;
+
+    LazySubModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
+                     const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
+                     const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_sub_mod")), in1(in1), in2(in2) {
+        if (1 + std::max(in1_max_value.as_bigint().num_bits(), (size_t)ceil(log2(modulus))) >= FieldT::num_bits) {
+            // subtraction would overflow field modulus, reduce now
+            sub_mod.reset(
+                new SubModGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, annotationPrefix));
+            out = sub_mod->out;
+        }
+        else {
+            // substraction would not overflow field modulus, reduce later
+            out.assign(pb, in1 + FieldT(modulus) - in2);
+        }
+    }
+    void generate_r1cs_constraints() {
+        if (sub_mod) {
+            sub_mod->generate_r1cs_constraints();
+        }
+    }
+    void generate_r1cs_witness() {
+        if (sub_mod) {
+            sub_mod->generate_r1cs_witness();
+        }
+        else {
+            out.evaluate(this->pb);
+        }
+    }
+};
+
+template <typename FieldT>
 class MulGadget : public gadget<FieldT> {
 public:
     pb_linear_combination<FieldT> in1, in2;
@@ -303,6 +383,57 @@ public:
             in1.evaluate(this->pb);
             in2.evaluate(this->pb);
             this->pb.val(tmp) = this->pb.lc_val(in1) * this->pb.lc_val(in2);
+        }
+    }
+};
+
+template <typename FieldT>
+class LazyMulModGadget : public gadget<FieldT> {
+protected:
+    std::shared_ptr<MulModGadget<FieldT>> mul_mod;
+    std::shared_ptr<MulGadget<FieldT>> mul;
+
+public:
+    const pb_linear_combination<FieldT> in1, in2;
+    pb_linear_combination<FieldT> out;
+
+    LazyMulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
+                     const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
+                     const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_mul_mod")), in1(in1), in2(in2) {
+        if (in1_max_value.as_bigint().num_bits() + in1_max_value.as_bigint().num_bits() >= FieldT::num_bits) {
+            // multiplication would overflow field modulus, reduce now
+            mul_mod.reset(new MulGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, annotationPrefix));
+            out = mul_mod->out;
+        }
+        else {
+            // multiplication would not overflow field modulus, reduce later
+            mul.reset(new MulGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, annotationPrefix));
+            out = mul->out;
+        }
+    }
+
+    void generate_r1cs_constraints() {
+        if (mul_mod) {
+            mul_mod->generate_r1cs_constraints();
+        }
+        else if (mul) {
+            mul->generate_r1cs_constraints();
+        }
+        else {
+            throw std::logic_error(this->annotation_prefix + ": no mul or mul_mod");
+        }
+    }
+
+    void generate_r1cs_witness() {
+        if (mul_mod) {
+            mul_mod->generate_r1cs_witness();
+        }
+        else if (mul) {
+            mul->generate_r1cs_witness();
+        }
+        else {
+            throw std::logic_error(this->annotation_prefix + ": no mul or mul_mod");
         }
     }
 };
