@@ -1,8 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "proofsystem/gadgets_libsnark.h"
-
-using namespace libsnark;
+#include "libsnark/common/default_types/r1cs_ppzksnark_pp.hpp"
 
 namespace {
 typedef libff::Fr<libff::default_ec_pp> FieldT;
@@ -51,7 +50,7 @@ TEST(libsnark_openfhe_gadgets, mod_gadget) {
             FieldT val = FieldT(q) * FieldT(modulus) + i;
             q++;
             pb.val(a) = val;
-            ModGadget<FieldT> g(pb, a, pb.val(a).as_bigint().num_bits(), modulus);
+            ModGadget<FieldT> g(pb, a, FieldT(q) * FieldT(modulus) + modulus - 1, modulus);
             g.generate_r1cs_constraints();
             g.generate_r1cs_witness();
             EXPECT_EQ(pb.is_satisfied(), true);

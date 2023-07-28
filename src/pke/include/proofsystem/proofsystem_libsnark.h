@@ -15,17 +15,16 @@ typedef libff::Fr<default_r1cs_ppzksnark_pp> FieldT;
 class LibsnarkProofMetadata : public ProofMetadata, private vector<vector<vector<pb_linear_combination<FieldT>>>> {
 public:
     vector<size_t> modulus;
-    // TODO: track exact modulus instead for precision, using bit sizes might add one unecessary final modular reduction
-    vector<vector<size_t>> curr_bit_size;
+    vector<vector<FieldT>> max_value;
 
     explicit LibsnarkProofMetadata(size_t n = 0)
-        : ProofMetadata(), vector<vector<vector<pb_linear_combination<FieldT>>>>(n), modulus(0), curr_bit_size(n) {}
+        : ProofMetadata(), vector<vector<vector<pb_linear_combination<FieldT>>>>(n), modulus(0), max_value(n) {}
 
     explicit LibsnarkProofMetadata(const vector<vector<vector<pb_linear_combination<FieldT>>>>& pb_linear_combinations)
         : ProofMetadata(),
           vector<vector<vector<pb_linear_combination<FieldT>>>>(pb_linear_combinations),
           modulus(pb_linear_combinations.size()),
-          curr_bit_size(pb_linear_combinations.size()) {}
+          max_value(pb_linear_combinations.size()) {}
 
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::vector;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::operator[];
@@ -33,6 +32,10 @@ public:
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::operator=;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::push_back;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::emplace_back;
+
+    inline size_t get_bit_size(size_t i, size_t j) const {
+        return max_value[i][j].as_bigint().num_bits();
+    }
 };
 
 class LibsnarkProofSystem : ProofSystem {

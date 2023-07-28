@@ -2,7 +2,6 @@
 #define OPENFHE_PROOFSYSTEM_H
 
 #include "ciphertext.h"
-#include "proofsystem_libsnark.h"
 
 using namespace lbcrypto;
 
