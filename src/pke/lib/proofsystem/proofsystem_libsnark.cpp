@@ -351,6 +351,80 @@ void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, 
         }
     }
 }
+
+template <typename VecType>
+void LibsnarkProofSystem::ConstrainSwitchModulus(
+    const typename VecType::Integer& newModulus, const typename VecType::Integer& rootOfUnity,
+    const typename VecType::Integer& modulusArb, const typename VecType::Integer& rootOfUnityArb,
+    const PolyImpl<VecType>& in, const PolyImpl<VecType>& out, const vector<pb_linear_combination<FieldT>>& in_lc,
+    const FieldT in_max_value, vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value
+
+) {
+    /**Switches the integers in the vector to values corresponding to the new
+ * modulus.
+ * Algorithm: Integer i, Old Modulus om, New Modulus nm,
+ * delta = abs(om-nm):
+ *  Case 1: om < nm
+ *    if i > om/2
+ *      i' = i + delta
+ *  Case 2: om > nm
+ *    if i > om/2
+ *      i' = i - delta
+ */
+    auto oldModulus(in.GetModulus());
+    auto oldModulusByTwo(oldModulus >> 1);
+    auto diff((oldModulus > newModulus) ? (oldModulus - newModulus) : (newModulus - oldModulus));
+
+    assert(in_max_value.as_ulong() < oldModulus);  // Otherwise, we need to mod-reduce before
+    if (newModulus > oldModulus) {
+        for (usint i = 0; i < in.GetLength(); i++) {
+            // b == [ in <= oldModulusByTwo ]
+            // out == b * in + (1-b) * (in + diff), which we simplify to out == in + (1-b) * diff
+            is_less_than_constant_gadget<FieldT> g(pb, in_lc[i], in_max_value.as_bigint().num_bits(),
+                                                   FieldT(oldModulusByTwo.template ConvertToInt<unsigned long>()) + 1);
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            pb.add_r1cs_constraint(r1cs_constraint<FieldT>(
+                1, in_lc[i] + (1 - g.less_or_eq) * FieldT(diff.template ConvertToInt<unsigned long>()), out_lc[i]));
+        }
+    }
+    else {
+        assert(oldModulusByTwo > diff);  // If q/2 > q', then in-diff >= 0
+
+        for (usint i = 0; i < in.GetLength(); i++) {
+            // b == [ in <= oldModulusByTwo ]
+            // tmp == b * in + (1-b) * (in - diff), which we simplify to tmp == in - (1-b) * diff
+            // out == tmp (mod) newModulus
+            is_less_than_constant_gadget<FieldT> g(pb, in_lc[i], in_max_value.as_bigint().num_bits(),
+                                                   FieldT(oldModulusByTwo.template ConvertToInt<unsigned long>()) + 1);
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            pb_variable<FieldT> tmp;
+            tmp.allocate(pb, "tmp");
+            pb.add_r1cs_constraint(r1cs_constraint<FieldT>(
+                1, in_lc[i] - (1 - g.less_or_eq) * FieldT(diff.template ConvertToInt<unsigned long>()), tmp));
+
+            FieldT tmp_max_value =
+                FieldT(std::max(oldModulusByTwo, oldModulus - 1 - diff).template ConvertToInt<unsigned long>());
+
+            auto n        = in.GetValues()[i];
+            auto sub_diff = (n > oldModulusByTwo) ? diff : 0;
+            assert(n >= sub_diff);
+            n           = n.Sub(sub_diff);
+            pb.val(tmp) = FieldT(n.template ConvertToInt<unsigned long>());
+
+            ModGadget<FieldT> g_mod(pb, tmp, tmp_max_value, newModulus.template ConvertToInt<unsigned long>(), "",
+                                    false);
+            out_lc[i] = g_mod.out;
+            g_mod.generate_r1cs_constraints();
+
+            g_mod.generate_r1cs_witness();
+            assert(pb.lc_val(in_lc[i]) == FieldT(in.GetValues()[i].template ConvertToInt<unsigned long>()));
+        }
+    }
+    out_max_value = newModulus.template ConvertToInt<unsigned long>() - 1;
+}
+
 template <typename IntType, typename VecType, typename VecType2>
 vector<pb_linear_combination<FieldT>> LibsnarkProofSystem::ConstrainINTT(
     const VecType& rootOfUnityInverseTable, const VecType& preconRootOfUnityInverseTable, const IntType& cycloOrderInv,

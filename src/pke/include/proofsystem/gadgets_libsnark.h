@@ -15,6 +15,63 @@ using std::cout, std::endl;
 using std::vector;
 
 template <typename FieldT>
+class is_less_than_constant_gadget : public gadget<FieldT> {
+private:
+    pb_variable_array<FieldT> alpha;
+    pb_linear_combination<FieldT> alpha_packed;
+    std::shared_ptr<packing_gadget<FieldT>> pack_alpha;
+
+public:
+    const pb_linear_combination<FieldT> A;
+    const FieldT B;
+    const size_t n;  // A < 2^n, (B-1) < 2^n
+    pb_variable<FieldT> less_or_eq;
+
+    // alpha[n] is less_or_eq
+    is_less_than_constant_gadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT>& A,
+                                 const size_t A_bit_size, const FieldT& B, const std::string& annotation_prefix = "")
+        : gadget<FieldT>(pb, FMT(annotation_prefix, "::less_than_constant_gadget")),
+          A(A),
+          B(B),
+          n(std::max(A_bit_size, (B - 1).as_bigint().num_bits())) {
+        assert(
+            B != 0 &&
+            "constraint 'A < 0' cannot be handled by less_than_constant_gadget (and not very meaningful on the modular field), use a custom constraint 'A != 0' instead");
+
+        alpha.allocate(pb, n, FMT(annotation_prefix, "::is_less_than_constant_gadget::alpha"));
+        less_or_eq.allocate(pb, FMT(annotation_prefix, "::is_less_than_constant_gadget::less_or_eq"));
+        alpha.emplace_back(less_or_eq);
+
+        alpha_packed.assign(pb, (FieldT(2) ^ n) + (B - 1) - A);
+
+        pack_alpha.reset(new packing_gadget<FieldT>(
+            pb, alpha, alpha_packed, FMT(annotation_prefix, "::is_less_than_constant_gadget::less_or_eq")));
+    };
+
+    void generate_r1cs_constraints();
+    void generate_r1cs_witness(bool assert_strict = true);
+};
+
+template <typename FieldT>
+void is_less_than_constant_gadget<FieldT>::generate_r1cs_constraints() {
+    pack_alpha->generate_r1cs_constraints(true);
+}
+
+template <typename FieldT>
+void is_less_than_constant_gadget<FieldT>::generate_r1cs_witness(bool assert_strict) {
+    A.evaluate(this->pb);
+
+    pack_alpha->generate_r1cs_witness_from_packed();
+
+    if (assert_strict) {
+        assert((B - 1).as_bigint().num_bits() <= n &&
+               "assumption B-1 <= 2^n bits violated in less_than_constant_gadget");
+        assert(this->pb.lc_val(A).as_bigint().num_bits() <= n &&
+               "assumption A <= 2^n bits violated in less_than_constant_gadget");
+    }
+}
+
+template <typename FieldT>
 class less_than_constant_gadget : public gadget<FieldT> {
 private:
     pb_variable_array<FieldT> alpha;

@@ -62,6 +62,13 @@ public:
                                                         const IntType& preconCycloOrderInv, VecType2* element,
                                                         VecType2* element_out, LibsnarkProofMetadata in, size_t index_i,
                                                         size_t index_j);
+    template <typename VecType>
+    void ConstrainSwitchModulus(const typename VecType::Integer& newModulus, const typename VecType::Integer& rootOfUnity,
+                                const typename VecType::Integer& modulusArb,
+                                const typename VecType::Integer& rootOfUnityArb, const PolyImpl<VecType>& in,
+                                const PolyImpl<VecType>& out, const vector<pb_linear_combination<FieldT>>& in_lc,
+                                const FieldT in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
+                                FieldT& out_max_value);
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
         FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkProofMetadata&>(vars));
     }
