@@ -81,8 +81,10 @@ class ModGadget : public gadget<FieldT> {
 protected:
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_quotient;
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_remainder;
-    pb_linear_combination<FieldT> in1, in2;
-    FieldT in1_max_value, in2_max_value;
+    pb_linear_combination<FieldT> in1;
+    FieldT in1_max_value;
+    pb_linear_combination<FieldT> in2;
+    FieldT in2_max_value;
     size_t modulus;
     pb_variable<FieldT> quotient;
     FieldT max_quotient_value;
@@ -109,10 +111,10 @@ protected:
             max_in_value = (in1_max_value * in2_max_value);
         }
 
-        assert(
-            max_in_value.as_bigint().num_bits() >= modulus_bit_size &&
-            "unnecessary mod reduction gadget");  // Needed, as otherwise we cannot instantiate `lt_constant_quotient` gadget with `max_quotient_value` == 0
-
+        if (assert_strict) {
+            assert(max_in_value.as_bigint().num_bits() >= modulus_bit_size && "unnecessary mod reduction gadget");
+            // Needed, as otherwise we cannot instantiate `lt_constant_quotient` gadget with `max_quotient_value` == 0
+        }
         // max_quotient_value does not have to be a very tight upper bound for soundness, we just need to ensure that quotient * modulus does not overflow the field modulus
         // However, we want max_quotient to be a tight upper bound for efficiency, in order to reduce the number of constraints needed for the range check
         max_quotient_value = div(max_in_value, FieldT(modulus));
@@ -276,6 +278,7 @@ protected:
 public:
     const pb_linear_combination<FieldT> in1, in2;
     pb_linear_combination<FieldT> out;
+    FieldT out_max_value;
 
     LazyAddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
                      const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
@@ -286,11 +289,13 @@ public:
             // addition would overflow field modulus, reduce now
             add_mod.reset(
                 new AddModGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, annotationPrefix));
-            out = add_mod->out;
+            out           = add_mod->out;
+            out_max_value = FieldT(modulus) - 1;
         }
         else {
             // addition would not overflow field modulus, reduce later
             out.assign(pb, in1 + in2);
+            out_max_value = in1_max_value + in2_max_value;
         }
     }
 
@@ -317,6 +322,7 @@ protected:
 public:
     const pb_linear_combination<FieldT> in1, in2;
     pb_linear_combination<FieldT> out;
+    FieldT out_max_value;
 
     LazySubModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
                      const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
@@ -326,11 +332,13 @@ public:
             // subtraction would overflow field modulus, reduce now
             sub_mod.reset(
                 new SubModGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, annotationPrefix));
-            out = sub_mod->out;
+            out           = sub_mod->out;
+            out_max_value = FieldT(modulus) - 1;
         }
         else {
             // substraction would not overflow field modulus, reduce later
             out.assign(pb, in1 + FieldT(modulus) - in2);
+            out_max_value = in1_max_value + FieldT(modulus);
         }
     }
     void generate_r1cs_constraints() {
@@ -394,23 +402,49 @@ protected:
     std::shared_ptr<MulGadget<FieldT>> mul;
 
 public:
-    const pb_linear_combination<FieldT> in1, in2;
+    pb_linear_combination<FieldT> in1, in2;
+    FieldT in1_max_value, in2_max_value;
+    size_t modulus;
     pb_linear_combination<FieldT> out;
+    FieldT out_max_value;
+
+    void init(protoboard<FieldT>& pb) {
+        if (in1_max_value.as_bigint().num_bits() + in1_max_value.as_bigint().num_bits() >= FieldT::num_bits) {
+            // multiplication would overflow field modulus, reduce now
+            mul_mod.reset(
+                new MulModGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, this->annotation_prefix));
+            out           = mul_mod->out;
+            out_max_value = FieldT(modulus) - 1;
+        }
+        else {
+            // multiplication would not overflow field modulus, reduce later
+            mul.reset(new MulGadget<FieldT>(pb, in1, in2, this->annotation_prefix));
+            out           = mul->out;
+            out_max_value = in1_max_value * in2_max_value;
+        }
+    }
 
     LazyMulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
                      const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
                      const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_mul_mod")), in1(in1), in2(in2) {
-        if (in1_max_value.as_bigint().num_bits() + in1_max_value.as_bigint().num_bits() >= FieldT::num_bits) {
-            // multiplication would overflow field modulus, reduce now
-            mul_mod.reset(new MulGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, annotationPrefix));
-            out = mul_mod->out;
-        }
-        else {
-            // multiplication would not overflow field modulus, reduce later
-            mul.reset(new MulGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, annotationPrefix));
-            out = mul->out;
-        }
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_mul_mod")),
+          in1(in1),
+          in1_max_value(in1_max_value),
+          in2(in2),
+          in2_max_value(in2_max_value),
+          modulus(modulus) {
+        init(pb);
+    }
+
+    LazyMulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
+                     const FieldT in2_constant, size_t modulus, const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_mul_mod")),
+          in1(in1),
+          in1_max_value(in1_max_value),
+          in2_max_value(in2_constant),
+          modulus(modulus) {
+        in2.assign(pb, in2_constant);
+        init(pb);
     }
 
     void generate_r1cs_constraints() {

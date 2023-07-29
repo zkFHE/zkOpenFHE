@@ -3,7 +3,6 @@
 
 #include "proofsystem/proofsystem_libsnark.h"
 #include "proofsystem/gadgets_libsnark.h"
-#include "proofsystem/libsnark_utils.h"
 
 #include <vector>
 #include <cassert>
@@ -122,7 +121,7 @@ void LibsnarkProofSystem::constrain_submod_lazy(const LibsnarkProofMetadata& in1
 
     out.max_value[index_out] = vector<FieldT>(out[index_out].size());
     for (size_t j = 0; j < num_limbs; ++j) {
-        out_max_value[j]    = in1.max_value[index_1][j] + modulus[j];
+        out_max_value[j]    = in1.max_value[index_1][j] + FieldT(modulus[j]);
         size_t out_bit_size = std::max(in1.get_bit_size(index_1, j), (size_t)ceil(log2(modulus[j]))) + 1ul;
         field_overflow[j]   = out_bit_size >= FieldT::num_bits;
         in2_lt_modulus[j]   = lt(in2.max_value[index_2][j], FieldT(modulus[j]));
@@ -140,7 +139,6 @@ void LibsnarkProofSystem::constrain_submod_lazy(const LibsnarkProofMetadata& in1
 
             in2_ij           = g_mod.get_output();
             in2_ij_max_value = FieldT(modulus[j]);
-            //            in2_ij_curr_bit_size = ceil(log2(modulus[j]));
         }
 
         if (field_overflow[j]) {
@@ -182,7 +180,7 @@ void LibsnarkProofSystem::constrain_mulmod_lazy(const LibsnarkProofMetadata& in1
     for (size_t j = 0; j < num_limbs; ++j) {
         size_t out_bit_size = in1.get_bit_size(index_1, j) + in2.get_bit_size(index_2, j);
         out_max_value[j]    = in1.max_value[index_1][j] * in2.max_value[index_2][j];
-        field_overflow[j]   = gt_eq(out_max_value[j], FieldT(FieldT::mod));
+        field_overflow[j]   = out_bit_size >= FieldT::num_bits;
 
         if (field_overflow[j]) {
             // Eager witness generation, add modulus constraints
@@ -353,5 +351,93 @@ void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, 
         }
     }
 }
+template <typename IntType, typename VecType, typename VecType2>
+vector<pb_linear_combination<FieldT>> LibsnarkProofSystem::ConstrainINTT(
+    const VecType& rootOfUnityInverseTable, const VecType& preconRootOfUnityInverseTable, const IntType& cycloOrderInv,
+    const IntType& preconCycloOrderInv, VecType2* element, VecType2* element_out, const LibsnarkProofMetadata in,
+    size_t index_i, size_t index_j) {
+    // Taken from ChineseRemainderTransformFTTNat<VecType>::InverseTransformFromBitReverseInPlace
 
+    vector<pb_linear_combination<FieldT>> out_lc(in[index_i][index_j]);
+    vector<FieldT> out_max_value(out_lc.size(), in.max_value[index_i][index_j]);
+
+    usint n = element->GetLength();
+
+    IntType modulus = element->GetModulus();
+
+    IntType loVal, hiVal, omega, omegaFactor;
+    NativeInteger preconOmega;
+    usint i, m, j1, j2, indexOmega, indexLo, indexHi;
+
+    usint t     = 1;
+    usint logt1 = 1;
+    for (m = (n >> 1); m >= 1; m >>= 1) {
+        for (i = 0; i < m; ++i) {
+            j1          = i << logt1;
+            j2          = j1 + t;
+            indexOmega  = m + i;
+            omega       = rootOfUnityInverseTable[indexOmega];
+            preconOmega = preconRootOfUnityInverseTable[indexOmega];
+
+            for (indexLo = j1; indexLo < j2; ++indexLo) {
+                // element_out[indexLo] = element[indexLo] + element[indexHi] (mod q)
+                // element_out[indexHi] = (element[indexLo] - element[indexHi]) * omega (mod q)
+                indexHi = indexLo + t;
+
+                hiVal = (*element)[indexHi];
+                loVal = (*element)[indexLo];
+
+                omegaFactor = loVal;
+                if (omegaFactor < hiVal) {
+                    omegaFactor += modulus;
+                }
+
+                omegaFactor -= hiVal;
+
+                loVal += hiVal;
+                if (loVal >= modulus) {
+                    loVal -= modulus;
+                }
+
+                omegaFactor.ModMulFastConstEq(omega, modulus, preconOmega);
+
+                LazyAddModGadget<FieldT> g1(this->pb, out_lc[indexLo], out_max_value[indexLo], out_lc[indexHi],
+                                            out_max_value[indexHi], modulus.ConvertToInt());
+                LazySubModGadget<FieldT> g2(this->pb, out_lc[indexLo], out_max_value[indexLo], out_lc[indexHi],
+                                            out_max_value[indexHi], modulus.ConvertToInt());
+                LazyMulModGadget<FieldT> g3(this->pb, out_lc[indexLo], out_max_value[indexLo],
+                                            FieldT(omegaFactor.ConvertToInt()), modulus.ConvertToInt());
+                g1.generate_r1cs_constraints();
+                g1.generate_r1cs_witness();
+
+                g2.generate_r1cs_constraints();
+                g2.generate_r1cs_witness();
+                g3.generate_r1cs_constraints();
+                g3.generate_r1cs_witness();
+
+                out_lc[indexLo]        = g1.out;
+                out_max_value[indexLo] = g1.out_max_value;
+
+                out_lc[indexHi]        = g3.out;
+                out_max_value[indexHi] = g3.out_max_value;
+
+                (*element)[indexLo] = loVal;
+                (*element)[indexHi] = omegaFactor;
+            }
+        }
+        t <<= 1;
+        logt1++;
+    }
+
+    for (i = 0; i < n; i++) {
+        (*element)[i].ModMulFastConstEq(cycloOrderInv, modulus, preconCycloOrderInv);
+        LazyMulModGadget<FieldT> g(this->pb, out_lc[i], out_max_value[i], FieldT(cycloOrderInv.ConvertToInt()),
+                                   modulus.ConvertToInt());
+        g.generate_r1cs_constraints();
+        g.generate_r1cs_witness();
+        out_lc[i]        = g.out;
+        out_max_value[i] = g.out_max_value;
+    }
+    return out_lc;
+}
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_CPP

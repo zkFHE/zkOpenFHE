@@ -41,8 +41,9 @@ public:
 class LibsnarkProofSystem : ProofSystem {
 public:
     protoboard<FieldT> pb;
+    const CryptoContext<DCRTPoly> cryptoContext;
 
-    LibsnarkProofSystem() {
+    explicit LibsnarkProofSystem(const CryptoContext<DCRTPoly>& cryptoContext) : cryptoContext(cryptoContext) {
         default_r1cs_ppzksnark_pp::init_public_params();
         pb = protoboard<FieldT>();
     }
@@ -54,6 +55,13 @@ public:
                                Ciphertext<DCRTPoly>& ctxt_out) override;
     void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                  Ciphertext<DCRTPoly>& ctxt_out) override;
+    template <typename IntType, typename VecType, typename VecType2>
+    vector<pb_linear_combination<FieldT>> ConstrainINTT(const VecType& rootOfUnityInverseTable,
+                                                        const VecType& preconRootOfUnityInverseTable,
+                                                        const IntType& cycloOrderInv,
+                                                        const IntType& preconCycloOrderInv, VecType2* element,
+                                                        VecType2* element_out, LibsnarkProofMetadata in, size_t index_i,
+                                                        size_t index_j);
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
         FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkProofMetadata&>(vars));
     }
