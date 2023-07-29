@@ -123,4 +123,60 @@ TEST(libsnark_openfhe_gadgets, intt) {
     auto pb = ps.pb;
     EXPECT_EQ(pb.is_satisfied(), true);
 }
+
+TEST(libsnark_openfhe_gadgets, switch_modulus) {
+    libff::default_ec_pp::init_public_params();
+
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    // use BV instead of HYBRID, as it is a lot simpler to arithmetize, even if it requires a quadratic number of NTTs
+    parameters.SetKeySwitchTechnique(KeySwitchTechnique::BV);
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+
+    cryptoContext->Enable(PKE);
+    cryptoContext->Enable(KEYSWITCH);
+    cryptoContext->Enable(LEVELEDSHE);
+
+    KeyPair<DCRTPoly> keyPair;
+    keyPair              = cryptoContext->KeyGen();
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+
+    auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+
+    auto in = ctxt->GetElements()[0];
+    in.SetFormat(Format::COEFFICIENT);
+    auto out(in);
+
+    //    using VecType = typename DCRTPolyImpl<DCRTPoly>::PolyType::Vector;
+    auto in_0  = in.GetElementAtIndex(0);
+    auto in_1  = in.GetElementAtIndex(1);
+    auto out_0 = out.GetElementAtIndex(0);
+
+    auto oldModulus     = in_0.GetModulus();
+    auto oldRootOfUnity = in_0.GetRootOfUnity();
+    auto newModulus     = in_1.GetModulus();
+    auto newRootOfunity = in_0.GetRootOfUnity();
+    out_0.SwitchModulus(newModulus, newRootOfunity, 0, 0);
+
+    LibsnarkProofSystem ps(cryptoContext);
+    ps.ConstrainPublicInput(ctxt);
+    LibsnarkProofMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+    LibsnarkProofMetadata out_metadata(in_metadata);
+
+    for (int i = 0; i < in_0.GetLength(); i++) {
+        ps.pb.lc_val(in_metadata[0][0][i]) = FieldT(in_0[i].template ConvertToInt<unsigned long>());
+    }
+    ps.ConstrainSwitchModulus(newModulus, newRootOfunity, 0, 0, in_0, out_0, in_metadata[0][0],
+                              in_metadata.max_value[0][0], (out_metadata[0][0]), out_metadata.max_value[0][0]);
+
+    auto pb = ps.pb;
+    cout << pb.num_inputs() << endl;
+    cout << pb.num_variables() << endl;
+    cout << pb.num_constraints() << endl;
+
+    EXPECT_EQ(pb.is_satisfied(), true);
+}
+
 };  // namespace
