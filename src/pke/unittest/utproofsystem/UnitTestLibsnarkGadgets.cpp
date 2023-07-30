@@ -130,8 +130,8 @@ TEST(libsnark_openfhe_gadgets, ntt) {
     for (size_t i = 0; i < in_0_0.GetLength(); ++i) {
         ps.pb.lc_val(in_lc[i]) = FieldT(in_0_0[i].Mod(modulus).ConvertToInt());
     }
-    auto out_lc(in_lc);
-    auto out_max_value(in_max_value);
+    vector<pb_linear_combination<FieldT>> out_lc;
+    FieldT out_max_value;
 
     ps.ConstrainNTT(ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus[modulus],
                     ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityPreconReverseTableByModulus[modulus], in_0_0,
@@ -200,8 +200,8 @@ TEST(libsnark_openfhe_gadgets, intt) {
     for (size_t i = 0; i < out_0_0.GetLength(); ++i) {
         assert(ps.pb.lc_val(in_lc[i]) == FieldT(in_0_0[i].Mod(modulus).ConvertToInt()));
     }
-    auto out_lc(in_lc);
-    auto out_max_value(in_max_value);
+    vector<pb_linear_combination<FieldT>> out_lc;
+    FieldT out_max_value;
 
     ps.ConstrainINTT(ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInverseReverseTableByModulus[modulus],
                      ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInversePreconReverseTableByModulus[modulus],
@@ -255,8 +255,9 @@ TEST(libsnark_openfhe_gadgets, set_format) {
 
     auto in_lc          = in_metadata[0][0];
     FieldT in_max_value = in_metadata.max_value[0][0];
-    auto out_lc(in_lc);
-    FieldT out_max_value(in_max_value);
+
+    vector<pb_linear_combination<FieldT>> out_lc;
+    FieldT out_max_value;
 
     ps.ConstrainSetFormat(Format::COEFFICIENT, in, out, in_lc, in_max_value, out_lc, out_max_value);
 
@@ -267,6 +268,9 @@ TEST(libsnark_openfhe_gadgets, set_format) {
         out_lc[i].evaluate(pb);
         EXPECT_EQ(mod(pb.lc_val(out_lc[i]), q), FieldT(out[i].ConvertToInt()));
     }
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
 }
 
 TEST(libsnark_openfhe_gadgets, switch_modulus) {
@@ -299,8 +303,6 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
     auto in_1  = in.GetElementAtIndex(1);
     auto out_0 = out.GetElementAtIndex(0);
 
-    auto oldModulus     = in_0.GetModulus();
-    auto oldRootOfUnity = in_0.GetRootOfUnity();
     auto newModulus     = in_1.GetModulus();
     auto newRootOfunity = in_0.GetRootOfUnity();
     out_0.SwitchModulus(newModulus, newRootOfunity, 0, 0);
@@ -308,23 +310,28 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
     LibsnarkProofSystem ps(cryptoContext);
     ps.ConstrainPublicInput(ctxt);
     LibsnarkProofMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
-    LibsnarkProofMetadata out_metadata(in_metadata);
 
+    auto in_lc        = in_metadata[0][0];
+    auto in_max_value = in_metadata.max_value[0][0];
+    vector<pb_linear_combination<FieldT>> out_lc;
+    FieldT out_max_value;
     for (int i = 0; i < in_0.GetLength(); i++) {
         ps.pb.lc_val(in_metadata[0][0][i]) = FieldT(in_0[i].template ConvertToInt<unsigned long>());
     }
-    ps.ConstrainSwitchModulus(newModulus, newRootOfunity, 0, 0, in_0, out_0, in_metadata[0][0],
-                              in_metadata.max_value[0][0], (out_metadata[0][0]), out_metadata.max_value[0][0]);
+    ps.ConstrainSwitchModulus(newModulus, newRootOfunity, 0, 0, in_0, out_0, in_lc, in_max_value, out_lc,
+                              out_max_value);
 
     auto pb = ps.pb;
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    auto out_lc = out_metadata[0][0];
     for (size_t i = 0; i < out_0.GetLength(); ++i) {
         out_lc[i].evaluate(pb);
         EXPECT_EQ(pb.lc_val(out_lc[i]), FieldT(out_0[i].ConvertToInt()));
     }
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
 }
 
 TEST(libsnark_openfhe_gadgets, key_switch_core) {
@@ -344,9 +351,10 @@ TEST(libsnark_openfhe_gadgets, key_switch_core) {
 
     KeyPair<DCRTPoly> keyPair;
     keyPair              = cryptoContext->KeyGen();
-    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
 
     auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    cryptoContext->ModReduceInPlace(ctxt); // Reduce number of levels to make test faster
 
     const DCRTPoly in = ctxt->GetElements()[0];
     const std::shared_ptr<vector<DCRTPoly>> out =
@@ -358,8 +366,10 @@ TEST(libsnark_openfhe_gadgets, key_switch_core) {
 
     const auto in_lc        = in_metadata[0];
     const auto in_max_value = in_metadata.max_value[0];
-    vector<vector<vector<pb_linear_combination<FieldT>>>> out_lc(out->size(), in_lc);
-    vector<vector<FieldT>> out_max_value(out->size(), in_max_value);
+    vector<vector<vector<pb_linear_combination<FieldT>>>> out_lc;
+    vector<vector<FieldT>> out_max_value;
+
+    cout << "in.GetNumOfElements() = " << in.GetNumOfElements() << endl;
     ps.ConstrainKeySwitchPrecomputeCore(in, cryptoContext->GetCryptoParameters(), out, in_lc, in_max_value, out_lc,
                                         out_max_value);
 
@@ -367,15 +377,19 @@ TEST(libsnark_openfhe_gadgets, key_switch_core) {
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
+    auto q = FieldT(in.GetModulus().template ConvertToInt<unsigned long>());
     for (size_t i = 0; i < out_lc.size(); ++i) {
         for (size_t j = 0; j < out_lc[i].size(); ++j) {
             for (size_t k = 0; k < out_lc[j].size(); ++k) {
                 out_lc[i][j][k].evaluate(pb);
                 auto expected = (*out)[i].GetElementAtIndex(j).GetValues()[k];
-                EXPECT_EQ(pb.lc_val(out_lc[i][j][k]), FieldT(expected.ConvertToInt()));
+                EXPECT_EQ(mod(pb.lc_val(out_lc[i][j][k]), q), FieldT(expected.ConvertToInt()));
             }
         }
     }
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
 }
 
 };  // namespace

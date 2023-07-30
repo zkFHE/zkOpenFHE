@@ -378,6 +378,7 @@ void LibsnarkProofSystem::ConstrainSwitchModulus(
                FieldT(in[i].template ConvertToInt<unsigned long>()));
     }
 #endif
+    out_lc.resize(in_lc.size());
 
     auto oldModulus(in.GetModulus());
     auto oldModulusByTwo(oldModulus >> 1);
@@ -732,111 +733,6 @@ void LibsnarkProofSystem::ConstrainINTT(const VecType& rootOfUnityInverseTable,
 #endif
 }
 
-void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
-    const DCRTPoly& in, const std::shared_ptr<CryptoParametersBase<DCRTPoly>>& cryptoParamsBase,
-    const std::shared_ptr<std::vector<DCRTPoly>>& out, const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
-    const vector<FieldT>& in_max_value, vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
-    vector<vector<FieldT>>& out_max_value) {
-    const auto cryptoParams = std::dynamic_pointer_cast<CryptoParametersRNS>(cryptoParamsBase);
-    //    auto decomposed = c.CRTDecompose(digitSize);
-    //    return std::make_shared<std::vector<DCRTPoly>>(decomposed.begin(), decomposed.end());
-
-    uint32_t digitSize = cryptoParams->GetDigitSize();
-
-    // used to store the number of digits for each small modulus
-    uint32_t nWindows = 0;
-
-    std::vector<usint> arrWindows;
-    auto baseBits = digitSize;
-    assert(baseBits == 0);
-
-    /*     if (baseBits > 0) {
-            nWindows = 0;
-
-            // creates an array of digits up to a certain tower
-            for (usint i = 0; i < m_vectors.size(); i++) {
-                usint nBits      = m_vectors[i].GetModulus().GetLengthForBase(2);
-                usint curWindows = nBits / baseBits;
-                if (nBits % baseBits > 0)
-                    curWindows++;
-                arrWindows.push_back(nWindows);
-                nWindows += curWindows;
-            }
-        }
-        else {*/
-    nWindows = in.GetNumOfElements();
-    //    }
-
-    using DCRTPolyType = DCRTPoly;
-    std::vector<DCRTPolyType> result(nWindows);
-    result = *out;
-
-    DCRTPolyType input = in.Clone();
-    input.SetFormat(Format::COEFFICIENT);
-    auto in_coeff_lc(in_lc);
-    auto in_coeff_max_value(in_max_value);
-    ConstrainSetFormat(Format::COEFFICIENT, in, input, in_lc, in_max_value, in_coeff_lc, in_coeff_max_value);
-
-    // TODO: do we need to clone/init from in here, or are we overwriting later on anyway?
-    out_lc = vector<vector<vector<pb_linear_combination<FieldT>>>>(out->size(), in_lc);
-
-    // out[k] holds a representation of the k-th limb of in, i.e., out[k] = f(in[k])
-    for (usint i = 0; i < in.GetNumOfElements(); i++) {
-        if (baseBits == 0) {
-            //            DCRTPolyType currentDCRTPoly = input.Clone();
-
-            for (usint k = 0; k < in.GetNumOfElements(); k++) {
-                auto temp(input.GetElementAtIndex(i));
-                auto temp_lc        = in_coeff_lc[i];
-                auto temp_max_value = in_coeff_max_value[i];
-                auto old_temp(temp);
-                auto old_temp_lc        = in_coeff_lc[i];
-                auto old_temp_max_value = in_coeff_max_value[i];
-
-                if (i != k) {
-                    temp.SwitchModulus(input.GetElementAtIndex(k).GetModulus(),
-                                       input.GetElementAtIndex(k).GetRootOfUnity(), 0, 0);
-                    ConstrainSwitchModulus(input.GetElementAtIndex(k).GetModulus(),
-                                           input.GetElementAtIndex(k).GetRootOfUnity(), 0, 0, old_temp, temp,
-                                           old_temp_lc, old_temp_max_value, temp_lc, temp_max_value);
-
-                    auto temp_coef(temp);
-                    auto temp_eval_lc(temp_lc);
-                    auto temp_eval_max_value(temp_max_value);
-                    temp.SetFormat(Format::EVALUATION);
-                    assert((*out)[i].GetElementAtIndex(k) == temp);
-
-                    ConstrainSetFormat(Format::EVALUATION, temp_coef, temp, temp_lc, temp_max_value, temp_eval_lc,
-                                       temp_eval_max_value);
-
-                    // currentDCRTPoly.m_vectors[k] = std::move(temp);
-                    out_lc[i][k]        = temp_eval_lc;
-                    out_max_value[i][k] = temp_eval_max_value;
-                }
-                else {  // saves an extra NTT
-                    // currentDCRTPoly.m_vectors[k] = this->m_vectors[k];
-                    auto curr_coef = input.GetElementAtIndex(k);
-                    auto curr_eval = (*out)[i].GetElementAtIndex(k);
-                    // currentDCRTPoly.m_vectors[k].SetFormat(Format::EVALUATION);
-                    const auto& curr_coef_lc = in_lc[k];
-                    auto curr_coef_max_value = in_coeff_max_value[k];
-                    auto curr_eval_lc(curr_coef_lc);
-                    auto curr_eval_max_value(curr_coef_max_value);
-                    ConstrainSetFormat(Format::EVALUATION, curr_coef, curr_eval, curr_coef_lc, curr_coef_max_value,
-                                       curr_eval_lc, curr_eval_max_value);
-
-                    out_lc[i][k]        = curr_eval_lc;
-                    out_max_value[i][k] = curr_eval_max_value;
-                }
-            }
-
-            //            currentDCRTPoly.m_format = Format::EVALUATION;
-            //
-            //            result[i] = std::move(currentDCRTPoly);
-        }
-    }
-}
-
 template <typename VecType2>
 void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const VecType2& in, const VecType2& out,
                                              const vector<pb_linear_combination<FieldT>>& in_lc,
@@ -893,12 +789,108 @@ void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const DCRTPoly
     assert(out.GetNumOfElements() == n);
     assert(in_lc.size() == n);
     assert(in_max_value.size() == n);
-    assert(out_lc.size() == n);
-    assert(out_max_value.size() == n);
+    out_lc.resize(n);
+    out_max_value.resize(n);
 
     for (size_t i = 0; i < n; i++) {
         ConstrainSetFormat(format, in.GetElementAtIndex(i), out.GetElementAtIndex(i), in_lc[i], in_max_value[i],
                            out_lc[i], out_max_value[i]);
+    }
+}
+
+void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
+    const DCRTPoly& in, const std::shared_ptr<CryptoParametersBase<DCRTPoly>>& cryptoParamsBase,
+    const std::shared_ptr<std::vector<DCRTPoly>>& out, const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
+    const vector<FieldT>& in_max_value, vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
+    vector<vector<FieldT>>& out_max_value) {
+    const auto cryptoParams = std::dynamic_pointer_cast<CryptoParametersRNS>(cryptoParamsBase);
+
+    out_lc.resize(out->size());
+    out_max_value.resize(out->size());
+    for (size_t i = 0; i < out->size(); ++i) {
+        out_lc[i].resize((*out)[i].GetNumOfElements());
+        out_max_value[i].resize((*out)[i].GetNumOfElements());
+    }
+
+    // Taken from DCRTPolyImpl<VecType>::CRTDecompose
+
+    //    auto decomposed = c.CRTDecompose(digitSize);
+    //    return std::make_shared<std::vector<DCRTPoly>>(decomposed.begin(), decomposed.end());
+
+    uint32_t digitSize = cryptoParams->GetDigitSize();
+
+    // used to store the number of digits for each small modulus
+    uint32_t nWindows = 0;
+
+    std::vector<usint> arrWindows;
+    auto baseBits = digitSize;
+    assert(baseBits == 0);
+
+    /*     if (baseBits > 0) {
+            nWindows = 0;
+
+            // creates an array of digits up to a certain tower
+            for (usint i = 0; i < m_vectors.size(); i++) {
+                usint nBits      = m_vectors[i].GetModulus().GetLengthForBase(2);
+                usint curWindows = nBits / baseBits;
+                if (nBits % baseBits > 0)
+                    curWindows++;
+                arrWindows.push_back(nWindows);
+                nWindows += curWindows;
+            }
+        }
+        else {*/
+    nWindows = in.GetNumOfElements();
+    //    }
+
+    using DCRTPolyType = DCRTPoly;
+    std::vector<DCRTPolyType> result(nWindows);
+    result = *out;
+
+    DCRTPolyType input = in.Clone();
+    input.SetFormat(Format::COEFFICIENT);
+    vector<vector<pb_linear_combination<FieldT>>> in_coeff_lc;
+    vector<FieldT> in_coeff_max_value;
+    ConstrainSetFormat(Format::COEFFICIENT, in, input, in_lc, in_max_value, in_coeff_lc, in_coeff_max_value);
+
+    // out[k] holds a representation of the k-th limb of in, i.e., out[k] = f(in[k])
+    for (usint i = 0; i < in.GetNumOfElements(); i++) {
+        if (baseBits == 0) {
+            //            DCRTPolyType currentDCRTPoly = input.Clone();
+
+            for (usint k = 0; k < in.GetNumOfElements(); k++) {
+                auto temp(input.GetElementAtIndex(i));
+                auto old_temp(temp);
+                auto old_temp_lc        = in_coeff_lc[i];
+                auto old_temp_max_value = in_coeff_max_value[i];
+                vector<pb_linear_combination<FieldT>> temp_lc;
+                FieldT temp_max_value;
+                if (i != k) {
+                    temp.SwitchModulus(input.GetElementAtIndex(k).GetModulus(),
+                                       input.GetElementAtIndex(k).GetRootOfUnity(), 0, 0);
+                    ConstrainSwitchModulus(input.GetElementAtIndex(k).GetModulus(),
+                                           input.GetElementAtIndex(k).GetRootOfUnity(), 0, 0, old_temp, temp,
+                                           old_temp_lc, old_temp_max_value, temp_lc, temp_max_value);
+
+                    // temp.SetFormat(Format::EVALUATION);
+                    ConstrainSetFormat(Format::EVALUATION, temp, (*out)[i].GetElementAtIndex(k), temp_lc,
+                                       temp_max_value, out_lc[i][k], out_max_value[i][k]);
+                }
+                else {  // saves an extra NTT
+                    // currentDCRTPoly.m_vectors[k] = this->m_vectors[k];
+                    // auto curr_coef = input.GetElementAtIndex(k);
+                    // auto curr_eval(curr_coef);
+                    // curr_eval.SetFormat(Format::EVALUATION);
+
+                    // currentDCRTPoly.m_vectors[k].SetFormat(Format::EVALUATION);
+                    ConstrainSetFormat(Format::EVALUATION, input.GetElementAtIndex(k), (*out)[i].GetElementAtIndex(k),
+                                       in_coeff_lc[k], in_coeff_max_value[k], out_lc[i][k], out_max_value[i][k]);
+                    assert((*out)[i].GetElementAtIndex(k) == in.GetElementAtIndex(k));
+                }
+            }
+            // currentDCRTPoly.m_format = Format::EVALUATION;
+            // result[i] = std::move(currentDCRTPoly);
+        }
     }
 }
 
