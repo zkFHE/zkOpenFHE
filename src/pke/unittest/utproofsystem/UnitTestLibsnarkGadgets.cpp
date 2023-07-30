@@ -1,9 +1,25 @@
+#define PROOFSYSTEM_CHECK_STRICT
+
+#define PROOFSYSTEM_ASSERT_EQ(a, b) assert(a == b);
+
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    #define PROOFSYSTEM_ASSERT_EQ(a, b)                \
+        do {                                           \
+            if (a != b) {                              \
+                std::cerr << a << " != " << b << endl; \
+            }                                          \
+            assert(a == b);                            \
+        } while (0);
+#else
+    #define PROOFSYSTEM_ASSERT_EQ(a, b) ;
+#endif
+
 #include <gtest/gtest.h>
 
 #include "proofsystem/gadgets_libsnark.h"
 #include "libsnark/common/default_types/r1cs_ppzksnark_pp.hpp"
 #include "openfhe.h"
-#include "proofsystem/proofsystem_libsnark.cpp" // TODO: fix this ugly hack after the deadline, at the moment the build system throws a weird linker error without this hack
+#include "proofsystem/proofsystem_libsnark.cpp"  // TODO: fix this ugly hack after the deadline, at the moment the build system throws a weird linker error without this hack
 #include "proofsystem/proofsystem_libsnark.h"
 
 namespace {
@@ -59,6 +75,75 @@ TEST(libsnark_openfhe_gadgets, mod_gadget) {
             EXPECT_EQ(pb.is_satisfied(), true);
             EXPECT_EQ(pb.val(g.out), i);
         }
+    }
+}
+
+TEST(libsnark_openfhe_gadgets, ntt) {
+    libff::default_ec_pp::init_public_params();
+
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    // use BV instead of HYBRID, as it is a lot simpler to arithmetize, even if it requires a quadratic number of NTTs
+    parameters.SetKeySwitchTechnique(KeySwitchTechnique::BV);
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+
+    cryptoContext->Enable(PKE);
+    cryptoContext->Enable(KEYSWITCH);
+    cryptoContext->Enable(LEVELEDSHE);
+
+    KeyPair<DCRTPoly> keyPair;
+    keyPair              = cryptoContext->KeyGen();
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+
+    auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+
+    using VecType = typename DCRTPoly::PolyType::Vector;
+    auto in_0     = ctxt->GetElements()[0].GetElementAtIndex(0);
+    in_0.SwitchFormat();
+    assert(in_0.GetFormat() == Format::COEFFICIENT);
+    auto out_0(in_0);
+    out_0.SwitchFormat();
+    assert(out_0.GetFormat() == Format::EVALUATION);
+
+    // out.GetRootOfUnity() is set to 0, as is out.GetParams().GetRootOfUnity()
+    auto rootOfUnity = out_0.GetRootOfUnity();
+    auto CycloOrder  = out_0.GetCyclotomicOrder();
+
+    LibsnarkProofSystem ps(cryptoContext);
+    ps.ConstrainPublicInput(ctxt);
+    const auto& modulus = in_0.GetModulus();
+    auto in_0_0         = in_0.GetValues();
+    auto out_0_0        = out_0.GetValues();
+    usint CycloOrderHf  = (CycloOrder >> 1);
+
+    using namespace intnat;
+    auto crt       = ChineseRemainderTransformFTTNat<VecType>();
+    auto mapSearch = crt.m_rootOfUnityReverseTableByModulus.find(modulus);
+    if (mapSearch == crt.m_rootOfUnityReverseTableByModulus.end() || mapSearch->second.GetLength() != CycloOrderHf) {
+        crt.PreCompute(rootOfUnity, CycloOrder, modulus);
+    }
+
+    auto in_lc        = (*LibsnarkProofSystem::GetProofMetadata(ctxt))[0][0];
+    auto in_max_value = (*LibsnarkProofSystem::GetProofMetadata(ctxt)).max_value[0][0];
+    for (size_t i = 0; i < in_0_0.GetLength(); ++i) {
+        ps.pb.lc_val(in_lc[i]) = FieldT(in_0_0[i].Mod(modulus).ConvertToInt());
+    }
+    auto out_lc(in_lc);
+    auto out_max_value(in_max_value);
+
+    ps.ConstrainNTT(ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus[modulus],
+                    ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityPreconReverseTableByModulus[modulus], in_0_0,
+                    out_0_0, in_lc, in_max_value, out_lc, out_max_value);
+
+    auto pb = ps.pb;
+    EXPECT_EQ(pb.is_satisfied(), true);
+
+    FieldT q(modulus.template ConvertToInt<unsigned long>());
+    for (size_t i = 0; i < out_0_0.GetLength(); ++i) {
+        out_lc[i].evaluate(pb);
+        EXPECT_EQ(mod(pb.lc_val(out_lc[i]), q), FieldT(out_0_0[i].ConvertToInt()));
     }
 }
 
@@ -132,6 +217,10 @@ TEST(libsnark_openfhe_gadgets, intt) {
         out_lc[i].evaluate(pb);
         EXPECT_EQ(mod(pb.lc_val(out_lc[i]), q), FieldT(out_0_0[i].ConvertToInt()));
     }
+
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
 }
 
 TEST(libsnark_openfhe_gadgets, set_format) {
@@ -235,6 +324,57 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
     for (size_t i = 0; i < out_0.GetLength(); ++i) {
         out_lc[i].evaluate(pb);
         EXPECT_EQ(pb.lc_val(out_lc[i]), FieldT(out_0[i].ConvertToInt()));
+    }
+}
+
+TEST(libsnark_openfhe_gadgets, key_switch_core) {
+    libff::default_ec_pp::init_public_params();
+
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    // use BV instead of HYBRID, as it is a lot simpler to arithmetize, even if it requires a quadratic number of NTTs
+    parameters.SetKeySwitchTechnique(KeySwitchTechnique::BV);
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+
+    cryptoContext->Enable(PKE);
+    cryptoContext->Enable(KEYSWITCH);
+    cryptoContext->Enable(LEVELEDSHE);
+
+    KeyPair<DCRTPoly> keyPair;
+    keyPair              = cryptoContext->KeyGen();
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+
+    auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+
+    const DCRTPoly in = ctxt->GetElements()[0];
+    const std::shared_ptr<vector<DCRTPoly>> out =
+        KeySwitchBV().EvalKeySwitchPrecomputeCore(in, cryptoContext->GetCryptoParameters());
+
+    LibsnarkProofSystem ps(cryptoContext);
+    ps.ConstrainPublicInput(ctxt);
+    LibsnarkProofMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+
+    const auto in_lc        = in_metadata[0];
+    const auto in_max_value = in_metadata.max_value[0];
+    vector<vector<vector<pb_linear_combination<FieldT>>>> out_lc(out->size(), in_lc);
+    vector<vector<FieldT>> out_max_value(out->size(), in_max_value);
+    ps.ConstrainKeySwitchPrecomputeCore(in, cryptoContext->GetCryptoParameters(), out, in_lc, in_max_value, out_lc,
+                                        out_max_value);
+
+    auto pb = ps.pb;
+
+    EXPECT_EQ(pb.is_satisfied(), true);
+
+    for (size_t i = 0; i < out_lc.size(); ++i) {
+        for (size_t j = 0; j < out_lc[i].size(); ++j) {
+            for (size_t k = 0; k < out_lc[j].size(); ++k) {
+                out_lc[i][j][k].evaluate(pb);
+                auto expected = (*out)[i].GetElementAtIndex(j).GetValues()[k];
+                EXPECT_EQ(pb.lc_val(out_lc[i][j][k]), FieldT(expected.ConvertToInt()));
+            }
+        }
     }
 }
 

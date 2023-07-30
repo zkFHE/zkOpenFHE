@@ -212,13 +212,28 @@ protected:
         init(pb, assert_strict);
     }
 
-    ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const FieldT in_max_value, size_t modulus,
-              const pb_variable<FieldT> out, const std::string& annotationPrefix = "", bool assert_strict = true)
+    ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const FieldT in_max_value,
+              const FieldT constant, size_t modulus, const pb_variable<FieldT> out,
+              const std::string& annotationPrefix = "", bool assert_strict = true)
         : gadget<FieldT>(pb, annotationPrefix), in1(in), in1_max_value(in_max_value), modulus(modulus), out(out) {
-        in2.assign(pb, FieldT(1));
-        in2_max_value = FieldT(1);
+        in2.assign(pb, constant);
+        in2_max_value = constant;
         init(pb, assert_strict);
     }
+
+    ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const FieldT in_max_value,
+              const FieldT constant, size_t modulus, const std::string& annotationPrefix = "",
+              bool assert_strict = true)
+        : gadget<FieldT>(pb, annotationPrefix), in1(in), in1_max_value(in_max_value), modulus(modulus) {
+        out.allocate(pb, FMT(this->annotation_prefix, "::out"));
+        in2.assign(pb, constant);
+        in2_max_value = constant;
+        init(pb, assert_strict);
+    }
+
+    ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const FieldT in_max_value, size_t modulus,
+              const pb_variable<FieldT> out, const std::string& annotationPrefix = "", bool assert_strict = true)
+        : ModGadget<FieldT>(pb, in, in_max_value, FieldT(1), modulus, out, annotationPrefix, assert_strict) {}
 
 public:
     pb_variable<FieldT> out;
@@ -277,6 +292,12 @@ protected:
         lc.assign(pb, in1 + in2);
         return lc;
     }
+    inline pb_linear_combination<FieldT> add(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1,
+                                             const FieldT in2) {
+        pb_linear_combination<FieldT> lc;
+        lc.assign(pb, in1 + in2);
+        return lc;
+    }
 
 public:
     AddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
@@ -285,6 +306,13 @@ public:
         : ModGadget<FieldT>(pb, add(pb, in1, in2), in1_max_value + in2_max_value, modulus,
                             FMT(annotationPrefix, "add_mod")) {
         assert(1 + std::max(in1_max_value.as_bigint().num_bits(), in2_max_value.as_bigint().num_bits()) <
+               FieldT::num_bits);
+    }
+    AddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
+                 const FieldT in2_constant, size_t modulus, const std::string& annotationPrefix = "")
+        : ModGadget<FieldT>(pb, add(pb, in1, in2_constant), in1_max_value + in2_constant, modulus,
+                            FMT(annotationPrefix, "add_mod")) {
+        assert(1 + std::max(in1_max_value.as_bigint().num_bits(), in2_constant.as_bigint().num_bits()) <
                FieldT::num_bits);
     }
     AddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
@@ -323,6 +351,13 @@ public:
         : ModGadget<FieldT>(pb, in1, in1_max_value, in2, in2_max_value, modulus, FMT(annotationPrefix, "mul_mod")) {
         assert(in1_max_value.as_bigint().num_bits() + in2_max_value.as_bigint().num_bits() < FieldT::num_bits);
     }
+
+    MulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
+                 const FieldT in2_constant, size_t modulus, const std::string& annotationPrefix = "")
+        : ModGadget<FieldT>(pb, in1, in1_max_value, in2_constant, modulus, FMT(annotationPrefix, "mul_mod")) {
+        assert(in1_max_value.as_bigint().num_bits() + in2_constant.as_bigint().num_bits() < FieldT::num_bits);
+    }
+
     MulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, size_t modulus,
                  const std::string& annotationPrefix = "") = delete;
 };
@@ -333,7 +368,7 @@ protected:
     std::shared_ptr<AddModGadget<FieldT>> add_mod;
 
 public:
-    const pb_linear_combination<FieldT> in1, in2;
+    pb_linear_combination<FieldT> in1, in2;
     pb_linear_combination<FieldT> out;
     FieldT out_max_value;
 
@@ -353,6 +388,24 @@ public:
             // addition would not overflow field modulus, reduce later
             out.assign(pb, in1 + in2);
             out_max_value = in1_max_value + in2_max_value;
+        }
+    }
+
+    LazyAddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
+                     const FieldT in2_constant, size_t modulus, const std::string& annotationPrefix = "")
+        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_add_mod")), in1(in1) {
+        in2.assign(pb, in2_constant);
+        if (1 + std::max(in1_max_value.as_bigint().num_bits(), in2_constant.as_bigint().num_bits()) >=
+            FieldT::num_bits) {
+            // addition would overflow field modulus, reduce now
+            add_mod.reset(new AddModGadget<FieldT>(pb, in1, in1_max_value, in2_constant, modulus, annotationPrefix));
+            out           = add_mod->out;
+            out_max_value = FieldT(modulus) - 1;
+        }
+        else {
+            // addition would not overflow field modulus, reduce later
+            out.assign(pb, in1 + in2_constant);
+            out_max_value = in1_max_value + in2_constant;
         }
     }
 

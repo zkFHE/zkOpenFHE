@@ -358,9 +358,7 @@ void LibsnarkProofSystem::ConstrainSwitchModulus(
     const typename VecType::Integer& newModulus, const typename VecType::Integer& rootOfUnity,
     const typename VecType::Integer& modulusArb, const typename VecType::Integer& rootOfUnityArb,
     const PolyImpl<VecType>& in, const PolyImpl<VecType>& out, const vector<pb_linear_combination<FieldT>>& in_lc,
-    const FieldT in_max_value, vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value
-
-) {
+    const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value) {
     /**Switches the integers in the vector to values corresponding to the new
  * modulus.
  * Algorithm: Integer i, Old Modulus om, New Modulus nm,
@@ -372,21 +370,45 @@ void LibsnarkProofSystem::ConstrainSwitchModulus(
  *    if i > om/2
  *      i' = i - delta
  */
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    for (int i = 0; i < out_lc.size(); i++) {
+        in_lc[i].evaluate(pb);
+        assert(lt_eq(pb.lc_val(in_lc[i]), in_max_value));
+        assert(mod(pb.lc_val(in_lc[i]), FieldT(in.GetModulus().template ConvertToInt<unsigned long>())) ==
+               FieldT(in[i].template ConvertToInt<unsigned long>()));
+    }
+#endif
+
     auto oldModulus(in.GetModulus());
     auto oldModulusByTwo(oldModulus >> 1);
     auto diff((oldModulus > newModulus) ? (oldModulus - newModulus) : (newModulus - oldModulus));
 
-    assert(in_max_value.as_ulong() < oldModulus);  // Otherwise, we need to mod-reduce before
+    auto in_red_lc        = in_lc;
+    auto in_red_max_value = in_max_value;
+    auto old_mod_int      = oldModulus.template ConvertToInt<unsigned long>();
+    if (gt_eq(in_max_value, FieldT(old_mod_int))) {
+        for (usint i = 0; i < in.GetLength(); i++) {
+            // We need to mod-reduce before continuing
+            ModGadget<FieldT> g(pb, in_lc[i], in_max_value, old_mod_int);
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            in_red_lc[i] = g.out;
+        }
+        in_red_max_value = FieldT(old_mod_int) - 1;
+    }
     if (newModulus > oldModulus) {
         for (usint i = 0; i < in.GetLength(); i++) {
+            assert(oldModulusByTwo + diff < newModulus);
             // b == [ in <= oldModulusByTwo ]
             // out == b * in + (1-b) * (in + diff), which we simplify to out == in + (1-b) * diff
-            is_less_than_constant_gadget<FieldT> g(pb, in_lc[i], in_max_value.as_bigint().num_bits(),
+            is_less_than_constant_gadget<FieldT> g(pb, in_red_lc[i], in_red_max_value.as_bigint().num_bits(),
                                                    FieldT(oldModulusByTwo.template ConvertToInt<unsigned long>()) + 1);
             g.generate_r1cs_constraints();
             g.generate_r1cs_witness();
-            pb.add_r1cs_constraint(r1cs_constraint<FieldT>(
-                1, in_lc[i] + (1 - g.less_or_eq) * FieldT(diff.template ConvertToInt<unsigned long>()), out_lc[i]));
+            out_lc[i].assign(pb,
+                             in_red_lc[i] + (1 - g.less_or_eq) * FieldT(diff.template ConvertToInt<unsigned long>()));
+
+            out_lc[i].evaluate(pb);
         }
     }
     else {
@@ -396,49 +418,193 @@ void LibsnarkProofSystem::ConstrainSwitchModulus(
             // b == [ in <= oldModulusByTwo ]
             // tmp == b * in + (1-b) * (in - diff), which we simplify to tmp == in - (1-b) * diff
             // out == tmp (mod) newModulus
-            is_less_than_constant_gadget<FieldT> g(pb, in_lc[i], in_max_value.as_bigint().num_bits(),
+            is_less_than_constant_gadget<FieldT> g(pb, in_red_lc[i], in_red_max_value.as_bigint().num_bits(),
                                                    FieldT(oldModulusByTwo.template ConvertToInt<unsigned long>()) + 1);
             g.generate_r1cs_constraints();
             g.generate_r1cs_witness();
-            pb_variable<FieldT> tmp;
-            tmp.allocate(pb, "tmp");
-            pb.add_r1cs_constraint(r1cs_constraint<FieldT>(
-                1, in_lc[i] - (1 - g.less_or_eq) * FieldT(diff.template ConvertToInt<unsigned long>()), tmp));
-
+            pb_linear_combination<FieldT> tmp;
+            tmp.assign(pb, in_red_lc[i] - (1 - g.less_or_eq) * FieldT(diff.template ConvertToInt<unsigned long>()));
             FieldT tmp_max_value =
                 FieldT(std::max(oldModulusByTwo, oldModulus - 1 - diff).template ConvertToInt<unsigned long>());
 
             auto n        = in.GetValues()[i];
             auto sub_diff = (n > oldModulusByTwo) ? diff : 0;
             assert(n >= sub_diff);
-            n           = n.Sub(sub_diff);
-            pb.val(tmp) = FieldT(n.template ConvertToInt<unsigned long>());
+            n = n.Sub(sub_diff);
+
+            tmp.evaluate(pb);
+            assert(pb.lc_val(tmp) == FieldT(n.template ConvertToInt<unsigned long>()));
 
             ModGadget<FieldT> g_mod(pb, tmp, tmp_max_value, newModulus.template ConvertToInt<unsigned long>(), "",
                                     false);
             out_lc[i] = g_mod.out;
             g_mod.generate_r1cs_constraints();
-
             g_mod.generate_r1cs_witness();
-            assert(pb.lc_val(in_lc[i]) == FieldT(in.GetValues()[i].template ConvertToInt<unsigned long>()));
         }
     }
     out_max_value = newModulus.template ConvertToInt<unsigned long>() - 1;
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    for (int i = 0; i < out_lc.size(); i++) {
+        out_lc[i].evaluate(pb);
+        assert(lt_eq(pb.lc_val(out_lc[i]), out_max_value));
+    }
+#endif
+}
+
+template <typename VecType, typename VecType2>
+void LibsnarkProofSystem::ConstrainNTT(const VecType& rootOfUnityTable, const VecType& preconRootOfUnityTable,
+                                       const VecType2& element_in, const VecType2& element_out,
+                                       const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                                       vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value) {
+    // Taken from NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace
+    auto element(element_in);
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    for (int i = 0; i < out_lc.size(); i++) {
+        in_lc[i].evaluate(pb);
+        assert(lt_eq(pb.lc_val(in_lc[i]), in_max_value));
+        assert(mod(pb.lc_val(in_lc[i]), FieldT(element.GetModulus().template ConvertToInt<unsigned long>())) ==
+               FieldT(element[i].template ConvertToInt<unsigned long>()));
+    }
+#endif
+
+    out_lc = vector<pb_linear_combination<FieldT>>(in_lc);
+    vector<FieldT> out_max_values(out_lc.size(), in_max_value);
+
+    using IntType = typename VecType::Integer;
+
+    usint n         = element.GetLength();
+    IntType modulus = element.GetModulus();
+    unsigned long q = modulus.template ConvertToInt<unsigned long>();
+
+    uint32_t indexOmega, indexHi;
+    NativeInteger preconOmega;
+    IntType omega, omegaFactor, loVal, hiVal, zero(0);
+
+    usint t     = (n >> 1);
+    usint logt1 = lbcrypto::GetMSB64(t);
+    for (uint32_t m = 1; m < n; m <<= 1, t >>= 1, --logt1) {
+        uint32_t j1, j2;
+        for (uint32_t i = 0; i < m; ++i) {
+            j1          = i << logt1;
+            j2          = j1 + t;
+            indexOmega  = m + i;
+            omega       = rootOfUnityTable[indexOmega];
+            preconOmega = preconRootOfUnityTable[indexOmega];
+            for (uint32_t indexLo = j1; indexLo < j2; ++indexLo) {
+                // omegaFactor = element[indexHi] * omega (mod q)
+                // element_out[indexLo] = element[indexLo] + omegaFactor (mod q)
+                // element_out[indexHi] = element[indexLo] - omegaFactor (mod q)
+                indexHi     = indexLo + t;
+                loVal       = element[indexLo];
+                omegaFactor = element[indexHi];
+                omegaFactor.ModMulFastConstEq(omega, modulus, preconOmega);
+
+                auto oldLoVal = loVal;
+
+                hiVal = loVal + omegaFactor;
+                if (hiVal >= modulus) {
+                    hiVal -= modulus;
+                }
+
+                if (loVal < omegaFactor) {
+                    loVal += modulus;
+                }
+                loVal -= omegaFactor;
+
+                // TODO: OPTIMIZEME: we might be able to use a LazyMulModGadget here in some cases, when out_max_values[indexHi] * omega is smaller than modulus
+                MulModGadget<FieldT> g1(pb, out_lc[indexHi], out_max_values[indexHi],
+                                        FieldT(omega.template ConvertToInt<unsigned long>()), q);
+                FieldT g1_out_max_value = FieldT(q) - 1;
+                g1.generate_r1cs_constraints();
+                g1.generate_r1cs_witness();
+
+#ifdef PROOFSYSTEM_CHECK_STRICT
+                PROOFSYSTEM_ASSERT_EQ(pb.val(g1.out), FieldT(omegaFactor.template ConvertToInt<unsigned long>()));
+                out_lc[indexLo].evaluate(pb);
+                out_lc[indexHi].evaluate(pb);
+                PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[indexLo]), FieldT(q)),
+                                      FieldT(element[indexLo].template ConvertToInt<unsigned long>()));
+                PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[indexHi]), FieldT(q)),
+                                      FieldT(element[indexHi].template ConvertToInt<unsigned long>()));
+
+#endif
+                LazyAddModGadget<FieldT> g2(pb, out_lc[indexLo], out_max_values[indexLo], g1.out, g1_out_max_value, q);
+                //                LazyAddModGadget<FieldT> g2(pb, out_lc[indexLo], out_max_values[indexLo], FieldT(omegaFactor.template ConvertToInt<unsigned long>()), q);
+
+                LazySubModGadget<FieldT> g3(pb, out_lc[indexLo], out_max_values[indexLo], g1.out, g1_out_max_value, q);
+
+                g2.generate_r1cs_constraints();
+                g2.generate_r1cs_witness();
+                g3.generate_r1cs_constraints();
+                g3.generate_r1cs_witness();
+
+                out_lc[indexLo]         = g2.out;
+                out_max_values[indexLo] = g2.out_max_value;
+                out_lc[indexHi]         = g3.out;
+                out_max_values[indexHi] = g3.out_max_value;
+
+                element[indexLo] = hiVal;
+                element[indexHi] = loVal;
+
+                assert(element[indexLo] == (oldLoVal + omegaFactor).Mod(q));
+                assert(element[indexHi] == (oldLoVal + q - omegaFactor).Mod(q));
+
+#ifdef PROOFSYSTEM_CHECK_STRICT
+                out_lc[indexLo].evaluate(pb);
+                out_lc[indexHi].evaluate(pb);
+                assert(lt_eq(pb.lc_val(out_lc[indexLo]), out_max_values[indexLo]));
+                assert(lt_eq(pb.lc_val(out_lc[indexHi]), out_max_values[indexHi]));
+
+                PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[indexLo]), FieldT(q)),
+                                      FieldT(element[indexLo].template ConvertToInt<unsigned long>()));
+                PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[indexHi]), FieldT(q)),
+                                      FieldT(element[indexHi].template ConvertToInt<unsigned long>()));
+#endif
+            }
+        }
+    }
+
+    // Set out_max_value to max of all out_max_values for soundness
+    out_max_value = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (lt(out_max_value, out_max_values[i])) {
+            out_max_value = out_max_values[i];
+        }
+    }
+
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    for (int i = 0; i < n; i++) {
+        assert(element[i] == element_out[i]);
+    }
+    for (int i = 0; i < out_lc.size(); i++) {
+        out_lc[i].evaluate(pb);
+        assert(lt_eq(pb.lc_val(out_lc[i]), out_max_value));
+        assert(mod(pb.lc_val(out_lc[i]), FieldT(q)) == FieldT(element_out[i].template ConvertToInt<unsigned long>()));
+    }
+#endif
 }
 
 template <typename IntType, typename VecType, typename VecType2>
 void LibsnarkProofSystem::ConstrainINTT(const VecType& rootOfUnityInverseTable,
                                         const VecType& preconRootOfUnityInverseTable, const IntType& cycloOrderInv,
-                                        const IntType& preconCycloOrderInv, VecType2 element, VecType2 element_out,
-                                        const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
-                                        vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value) {
-    // Taken from ChineseRemainderTransformFTTNat<VecType>::InverseTransformFromBitReverseInPlace
+                                        const IntType& preconCycloOrderInv, const VecType2& element_in,
+                                        const VecType2& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
+                                        const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
+                                        FieldT& out_max_value) {
+    // Taken from NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverseInPlace
+
+    auto element(element_in);
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    for (int i = 0; i < out_lc.size(); i++) {
+        in_lc[i].evaluate(pb);
+        assert(lt_eq(pb.lc_val(in_lc[i]), in_max_value));
+        assert(mod(pb.lc_val(in_lc[i]), FieldT(element.GetModulus().template ConvertToInt<unsigned long>())) ==
+               FieldT(element[i].template ConvertToInt<unsigned long>()));
+    }
+#endif
 
     out_lc = vector<pb_linear_combination<FieldT>>(in_lc);
     vector<FieldT> out_max_values(out_lc.size(), in_max_value);
-    //    for (int i = 0; i < in[index_i][index_j].size(); i++) {
-    //        assert(pb.lc_val(out_lc[i]) == pb.lc_val(in[index_i][index_j][i]));
-    //    }
 
     usint n = element.GetLength();
 
@@ -521,6 +687,18 @@ void LibsnarkProofSystem::ConstrainINTT(const VecType& rootOfUnityInverseTable,
 
                 element[indexLo] = loVal;
                 element[indexHi] = omegaFactor;
+
+#ifdef PROOFSYSTEM_CHECK_STRICT
+                out_lc[indexLo].evaluate(pb);
+                out_lc[indexHi].evaluate(pb);
+                assert(lt_eq(pb.lc_val(out_lc[indexLo]), out_max_values[indexLo]));
+                assert(lt_eq(pb.lc_val(out_lc[indexHi]), out_max_values[indexHi]));
+
+                PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[indexLo]), FieldT(q)),
+                                      FieldT(element[indexLo].template ConvertToInt<unsigned long>()));
+                PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[indexHi]), FieldT(q)),
+                                      FieldT(element[indexHi].template ConvertToInt<unsigned long>()));
+#endif
             }
         }
         t <<= 1;
@@ -541,19 +719,27 @@ void LibsnarkProofSystem::ConstrainINTT(const VecType& rootOfUnityInverseTable,
             out_max_value = out_max_values[i];
         }
     }
+
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    for (int i = 0; i < n; i++) {
+        assert(element[i] == element_out[i]);
+    }
+    for (int i = 0; i < out_lc.size(); i++) {
+        out_lc[i].evaluate(pb);
+        assert(lt_eq(pb.lc_val(out_lc[i]), out_max_value));
+        assert(mod(pb.lc_val(out_lc[i]), FieldT(q)) == FieldT(element_out[i].template ConvertToInt<unsigned long>()));
+    }
+#endif
 }
 
-void LibsnarkProofSystem::EvalKeySwitchPrecomputeCore(DCRTPoly in,
-                                                      std::shared_ptr<CryptoParametersBase<DCRTPoly>> cryptoParamsBase,
-                                                      std::shared_ptr<std::vector<DCRTPoly>> out,
-                                                      const LibsnarkProofMetadata& in_lc, const size_t in_i,
-                                                      size_t in_j, LibsnarkProofMetadata& out_lc, size_t& out_i,
-                                                      size_t& out_j) {
+void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
+    const DCRTPoly& in, const std::shared_ptr<CryptoParametersBase<DCRTPoly>>& cryptoParamsBase,
+    const std::shared_ptr<std::vector<DCRTPoly>>& out, const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
+    const vector<FieldT>& in_max_value, vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
+    vector<vector<FieldT>>& out_max_value) {
     const auto cryptoParams = std::dynamic_pointer_cast<CryptoParametersRNS>(cryptoParamsBase);
     //    auto decomposed = c.CRTDecompose(digitSize);
     //    return std::make_shared<std::vector<DCRTPoly>>(decomposed.begin(), decomposed.end());
-
-    size_t index_in = 1;  // TODO: this assumes that input is always second poly in a ciphertext of size 3;
 
     uint32_t digitSize = cryptoParams->GetDigitSize();
 
@@ -564,20 +750,20 @@ void LibsnarkProofSystem::EvalKeySwitchPrecomputeCore(DCRTPoly in,
     auto baseBits = digitSize;
     assert(baseBits == 0);
 
-    //    if (baseBits > 0) {
-    //        nWindows = 0;
-    //
-    //        // creates an array of digits up to a certain tower
-    //        for (usint i = 0; i < m_vectors.size(); i++) {
-    //            usint nBits      = m_vectors[i].GetModulus().GetLengthForBase(2);
-    //            usint curWindows = nBits / baseBits;
-    //            if (nBits % baseBits > 0)
-    //                curWindows++;
-    //            arrWindows.push_back(nWindows);
-    //            nWindows += curWindows;
-    //        }
-    //    }
-    //    else {
+    /*     if (baseBits > 0) {
+            nWindows = 0;
+
+            // creates an array of digits up to a certain tower
+            for (usint i = 0; i < m_vectors.size(); i++) {
+                usint nBits      = m_vectors[i].GetModulus().GetLengthForBase(2);
+                usint curWindows = nBits / baseBits;
+                if (nBits % baseBits > 0)
+                    curWindows++;
+                arrWindows.push_back(nWindows);
+                nWindows += curWindows;
+            }
+        }
+        else {*/
     nWindows = in.GetNumOfElements();
     //    }
 
@@ -586,38 +772,61 @@ void LibsnarkProofSystem::EvalKeySwitchPrecomputeCore(DCRTPoly in,
     result = *out;
 
     DCRTPolyType input = in.Clone();
-    input.SetFormat(Format::COEFFICIENT);  // TODO: INTT
-                                           //    ConstrainINTT()
+    input.SetFormat(Format::COEFFICIENT);
+    auto in_coeff_lc(in_lc);
+    auto in_coeff_max_value(in_max_value);
+    ConstrainSetFormat(Format::COEFFICIENT, in, input, in_lc, in_max_value, in_coeff_lc, in_coeff_max_value);
 
-    std::vector<LibsnarkProofMetadata> out_metadata(in.GetNumOfElements(),
-                                                    in_lc);  // TODO: do we need to clone/init from in here?
+    // TODO: do we need to clone/init from in here, or are we overwriting later on anyway?
+    out_lc = vector<vector<vector<pb_linear_combination<FieldT>>>>(out->size(), in_lc);
 
     // out[k] holds a representation of the k-th limb of in, i.e., out[k] = f(in[k])
     for (usint i = 0; i < in.GetNumOfElements(); i++) {
         if (baseBits == 0) {
             //            DCRTPolyType currentDCRTPoly = input.Clone();
-            DCRTPolyType curr = (*out)[i];
 
             for (usint k = 0; k < in.GetNumOfElements(); k++) {
                 auto temp(input.GetElementAtIndex(i));
+                auto temp_lc        = in_coeff_lc[i];
+                auto temp_max_value = in_coeff_max_value[i];
                 auto old_temp(temp);
+                auto old_temp_lc        = in_coeff_lc[i];
+                auto old_temp_max_value = in_coeff_max_value[i];
 
                 if (i != k) {
                     temp.SwitchModulus(input.GetElementAtIndex(k).GetModulus(),
                                        input.GetElementAtIndex(k).GetRootOfUnity(), 0, 0);
                     ConstrainSwitchModulus(input.GetElementAtIndex(k).GetModulus(),
                                            input.GetElementAtIndex(k).GetRootOfUnity(), 0, 0, old_temp, temp,
-                                           in_lc[index_in][i], in_lc.max_value[index_in][i],
-                                           out_metadata[k][index_in][i], out_metadata[k].max_value[index_in][i]);
+                                           old_temp_lc, old_temp_max_value, temp_lc, temp_max_value);
 
-                    temp.SetFormat(Format::EVALUATION);  // TODO
-                    //                    currentDCRTPoly.m_vectors[k] = std::move(temp);
+                    auto temp_coef(temp);
+                    auto temp_eval_lc(temp_lc);
+                    auto temp_eval_max_value(temp_max_value);
+                    temp.SetFormat(Format::EVALUATION);
+                    assert((*out)[i].GetElementAtIndex(k) == temp);
+
+                    ConstrainSetFormat(Format::EVALUATION, temp_coef, temp, temp_lc, temp_max_value, temp_eval_lc,
+                                       temp_eval_max_value);
+
+                    // currentDCRTPoly.m_vectors[k] = std::move(temp);
+                    out_lc[i][k]        = temp_eval_lc;
+                    out_max_value[i][k] = temp_eval_max_value;
                 }
                 else {  // saves an extra NTT
-                        //                    currentDCRTPoly.m_vectors[k] = this->m_vectors[k];
-                        //                    currentDCRTPoly.m_vectors[k].SetFormat(Format::EVALUATION); // TODO
-                        //                    assert(curr.GetElementAtIndex(k) == input.GetElementAtIndex(k));
-                    //                    ConstrainSetFormat(Format::EVALUATION, input.GetElementAtIndex(k), curr.GetElementAtIndex(k));
+                    // currentDCRTPoly.m_vectors[k] = this->m_vectors[k];
+                    auto curr_coef = input.GetElementAtIndex(k);
+                    auto curr_eval = (*out)[i].GetElementAtIndex(k);
+                    // currentDCRTPoly.m_vectors[k].SetFormat(Format::EVALUATION);
+                    const auto& curr_coef_lc = in_lc[k];
+                    auto curr_coef_max_value = in_coeff_max_value[k];
+                    auto curr_eval_lc(curr_coef_lc);
+                    auto curr_eval_max_value(curr_coef_max_value);
+                    ConstrainSetFormat(Format::EVALUATION, curr_coef, curr_eval, curr_coef_lc, curr_coef_max_value,
+                                       curr_eval_lc, curr_eval_max_value);
+
+                    out_lc[i][k]        = curr_eval_lc;
+                    out_max_value[i][k] = curr_eval_max_value;
                 }
             }
 
@@ -643,16 +852,16 @@ void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const VecType2
     const auto& modulus = in.GetModulus();
     usint CycloOrderHf  = (CycloOrder >> 1);
 
-    using VecType  = typename DCRTPoly::PolyType::Vector;
-    auto crt       = ChineseRemainderTransformFTTNat<VecType>();
-    auto mapSearch = ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus.find(modulus);
-    if (mapSearch == ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus.end() ||
-        mapSearch->second.GetLength() != CycloOrderHf) {
-        crt.PreCompute(rootOfUnity, CycloOrder, modulus);
-    }
-    usint msb = lbcrypto::GetMSB64(CycloOrderHf - 1);
+    using VecType = typename DCRTPoly::PolyType::Vector;
 
     if (format == COEFFICIENT) {
+        auto mapSearch = ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus.find(modulus);
+        if (mapSearch == ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus.end() ||
+            mapSearch->second.GetLength() != CycloOrderHf) {
+            ChineseRemainderTransformFTTNat<VecType>().PreCompute(rootOfUnity, CycloOrder, modulus);
+        }
+        usint msb = lbcrypto::GetMSB64(CycloOrderHf - 1);
+
         ConstrainINTT(
             ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInverseReverseTableByModulus[modulus],
             ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInversePreconReverseTableByModulus[modulus],
@@ -661,7 +870,35 @@ void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const VecType2
             in_lc, in_max_value, out_lc, out_max_value);
     }
     else {
-        throw std::logic_error("not implemented");
+        auto mapSearch = ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus.find(modulus);
+        if (mapSearch == ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus.end() ||
+            mapSearch->second.GetLength() != CycloOrderHf) {
+            ChineseRemainderTransformFTTNat<VecType>().PreCompute(rootOfUnity, CycloOrder, modulus);
+        }
+
+        ConstrainNTT(ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus[modulus],
+                     ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityPreconReverseTableByModulus[modulus], in,
+                     out, in_lc, in_max_value, out_lc, out_max_value);
+    }
+}
+
+void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const DCRTPoly& in, const DCRTPoly& out,
+                                             const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
+                                             const vector<FieldT>& in_max_value,
+                                             vector<vector<pb_linear_combination<FieldT>>>& out_lc,
+                                             vector<FieldT>& out_max_value) {
+    assert(in.GetFormat() != format);
+    assert(out.GetFormat() == format);
+    size_t n = in.GetNumOfElements();
+    assert(out.GetNumOfElements() == n);
+    assert(in_lc.size() == n);
+    assert(in_max_value.size() == n);
+    assert(out_lc.size() == n);
+    assert(out_max_value.size() == n);
+
+    for (size_t i = 0; i < n; i++) {
+        ConstrainSetFormat(format, in.GetElementAtIndex(i), out.GetElementAtIndex(i), in_lc[i], in_max_value[i],
+                           out_lc[i], out_max_value[i]);
     }
 }
 

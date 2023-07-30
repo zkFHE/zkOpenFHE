@@ -51,40 +51,64 @@ public:
     std::shared_ptr<LibsnarkProofMetadata> ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext);
     void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                            Ciphertext<DCRTPoly>& ctxt_out) override;
+
     void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                Ciphertext<DCRTPoly>& ctxt_out) override;
+
     void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                  Ciphertext<DCRTPoly>& ctxt_out) override;
+
     template <typename VecType2>
-    void ConstrainSetFormat(const Format format, const VecType2& in, const VecType2& out,
+    void ConstrainSetFormat(Format format, const VecType2& in, const VecType2& out,
                             const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
                             vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
 
+    void ConstrainSetFormat(Format format, const DCRTPoly& in, const DCRTPoly& out,
+                            const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
+                            const vector<FieldT>& in_max_value, vector<vector<pb_linear_combination<FieldT>>>& out_lc,
+                            vector<FieldT>& out_max_value);
+
+    template <typename VecType, typename VecType2>
+    void ConstrainNTT(const VecType& rootOfUnityTable, const VecType& preconRootOfUnityTable, const VecType2& element,
+                      const VecType2& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
+                      const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
+
     template <typename IntType, typename VecType, typename VecType2>
     void ConstrainINTT(const VecType& rootOfUnityInverseTable, const VecType& preconRootOfUnityInverseTable,
-                       const IntType& cycloOrderInv, const IntType& preconCycloOrderInv, VecType2 element,
-                       VecType2 element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
+                       const IntType& cycloOrderInv, const IntType& preconCycloOrderInv, const VecType2& element,
+                       const VecType2& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
                        const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
                        FieldT& out_max_value);
+
     template <typename VecType>
     void ConstrainSwitchModulus(const typename VecType::Integer& newModulus,
                                 const typename VecType::Integer& rootOfUnity,
                                 const typename VecType::Integer& modulusArb,
                                 const typename VecType::Integer& rootOfUnityArb, const PolyImpl<VecType>& in,
                                 const PolyImpl<VecType>& out, const vector<pb_linear_combination<FieldT>>& in_lc,
-                                const FieldT in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
+                                const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
                                 FieldT& out_max_value);
-    void EvalKeySwitchPrecomputeCore(DCRTPoly in, std::shared_ptr<CryptoParametersBase<DCRTPoly>> cryptoParamsBase,
-                                     std::shared_ptr<std::vector<DCRTPoly>> out, const LibsnarkProofMetadata& in_lc,
-                                     const size_t in_i, size_t in_j, LibsnarkProofMetadata& out_lc, size_t& out_i,
-                                     size_t& out_j);
+
+    void ConstrainKeySwitchPrecomputeCore(const DCRTPoly& in,
+                                          const std::shared_ptr<CryptoParametersBase<DCRTPoly>>& cryptoParamsBase,
+                                          const std::shared_ptr<std::vector<DCRTPoly>>& out,
+                                          const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
+                                          const vector<FieldT>& in_max_value,
+                                          vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
+                                          vector<vector<FieldT>>& out_max_value);
+
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
         FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkProofMetadata&>(vars));
     }
+
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkProofMetadata& out_vars);
+
     static std::shared_ptr<LibsnarkProofMetadata> GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext);
+
     static void SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext,
                                  const std::shared_ptr<LibsnarkProofMetadata>& metadata);
+
+protected:
     void constrain_addmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
                                const size_t index_2, LibsnarkProofMetadata& out, const size_t index_out);
     void constrain_submod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
