@@ -55,20 +55,29 @@ public:
                                Ciphertext<DCRTPoly>& ctxt_out) override;
     void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                  Ciphertext<DCRTPoly>& ctxt_out) override;
+    template <typename VecType2>
+    void ConstrainSetFormat(const Format format, const VecType2& in, const VecType2& out,
+                            const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                            vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
+
     template <typename IntType, typename VecType, typename VecType2>
-    vector<pb_linear_combination<FieldT>> ConstrainINTT(const VecType& rootOfUnityInverseTable,
-                                                        const VecType& preconRootOfUnityInverseTable,
-                                                        const IntType& cycloOrderInv,
-                                                        const IntType& preconCycloOrderInv, VecType2* element,
-                                                        VecType2* element_out, LibsnarkProofMetadata in, size_t index_i,
-                                                        size_t index_j);
+    void ConstrainINTT(const VecType& rootOfUnityInverseTable, const VecType& preconRootOfUnityInverseTable,
+                       const IntType& cycloOrderInv, const IntType& preconCycloOrderInv, VecType2 element,
+                       VecType2 element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
+                       const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
+                       FieldT& out_max_value);
     template <typename VecType>
-    void ConstrainSwitchModulus(const typename VecType::Integer& newModulus, const typename VecType::Integer& rootOfUnity,
+    void ConstrainSwitchModulus(const typename VecType::Integer& newModulus,
+                                const typename VecType::Integer& rootOfUnity,
                                 const typename VecType::Integer& modulusArb,
                                 const typename VecType::Integer& rootOfUnityArb, const PolyImpl<VecType>& in,
                                 const PolyImpl<VecType>& out, const vector<pb_linear_combination<FieldT>>& in_lc,
                                 const FieldT in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
                                 FieldT& out_max_value);
+    void EvalKeySwitchPrecomputeCore(DCRTPoly in, std::shared_ptr<CryptoParametersBase<DCRTPoly>> cryptoParamsBase,
+                                     std::shared_ptr<std::vector<DCRTPoly>> out, const LibsnarkProofMetadata& in_lc,
+                                     const size_t in_i, size_t in_j, LibsnarkProofMetadata& out_lc, size_t& out_i,
+                                     size_t& out_j);
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
         FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkProofMetadata&>(vars));
     }
