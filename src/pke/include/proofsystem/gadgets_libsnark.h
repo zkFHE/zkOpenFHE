@@ -385,6 +385,7 @@ public:
                      const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
                      const std::string& annotationPrefix = "")
         : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_sub_mod")), in1(in1), in2(in2) {
+        assert(lt_eq(in2_max_value, FieldT(modulus)));
         if (1 + std::max(in1_max_value.as_bigint().num_bits(), (size_t)ceil(log2(modulus))) >= FieldT::num_bits) {
             // subtraction would overflow field modulus, reduce now
             sub_mod.reset(

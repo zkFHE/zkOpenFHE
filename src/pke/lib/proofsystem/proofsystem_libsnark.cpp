@@ -433,11 +433,16 @@ vector<pb_linear_combination<FieldT>> LibsnarkProofSystem::ConstrainINTT(
     // Taken from ChineseRemainderTransformFTTNat<VecType>::InverseTransformFromBitReverseInPlace
 
     vector<pb_linear_combination<FieldT>> out_lc(in[index_i][index_j]);
+    //    for (int i = 0; i < in[index_i][index_j].size(); i++) {
+    //        assert(pb.lc_val(out_lc[i]) == pb.lc_val(in[index_i][index_j][i]));
+    //    }
+
     vector<FieldT> out_max_value(out_lc.size(), in.max_value[index_i][index_j]);
 
     usint n = element->GetLength();
 
     IntType modulus = element->GetModulus();
+    unsigned long q = modulus.template ConvertToInt<unsigned long>();
 
     IntType loVal, hiVal, omega, omegaFactor;
     NativeInteger preconOmega;
@@ -476,11 +481,27 @@ vector<pb_linear_combination<FieldT>> LibsnarkProofSystem::ConstrainINTT(
                 omegaFactor.ModMulFastConstEq(omega, modulus, preconOmega);
 
                 LazyAddModGadget<FieldT> g1(this->pb, out_lc[indexLo], out_max_value[indexLo], out_lc[indexHi],
-                                            out_max_value[indexHi], modulus.ConvertToInt());
-                LazySubModGadget<FieldT> g2(this->pb, out_lc[indexLo], out_max_value[indexLo], out_lc[indexHi],
-                                            out_max_value[indexHi], modulus.ConvertToInt());
-                LazyMulModGadget<FieldT> g3(this->pb, out_lc[indexLo], out_max_value[indexLo],
-                                            FieldT(omegaFactor.ConvertToInt()), modulus.ConvertToInt());
+                                            out_max_value[indexHi], q);
+
+                // If out_lc[indexHi] is > modulus, we cannot use the lazy sub-mod gadget as-is, and we need to reduce out_lc[indexHi] mod modulus first
+                pb_linear_combination<FieldT> hi_reduced;
+                FieldT hi_reduced_max_value;
+                if (lt_eq(out_max_value[indexHi], FieldT(q))) {
+                    hi_reduced           = out_lc[indexHi];
+                    hi_reduced_max_value = out_max_value[indexHi];
+                }
+                else {
+                    ModGadget<FieldT> g_mod(this->pb, out_lc[indexHi], out_max_value[indexHi], q);
+                    g_mod.generate_r1cs_constraints();
+                    g_mod.generate_r1cs_witness();
+                    hi_reduced           = g_mod.out;
+                    hi_reduced_max_value = FieldT(q) - 1;
+                }
+
+                LazySubModGadget<FieldT> g2(this->pb, out_lc[indexLo], out_max_value[indexLo], hi_reduced,
+                                            hi_reduced_max_value, q);
+                LazyMulModGadget<FieldT> g3(this->pb, g2.out, g2.out_max_value, FieldT(omega.ConvertToInt()), q);
+
                 g1.generate_r1cs_constraints();
                 g1.generate_r1cs_witness();
 
@@ -491,9 +512,11 @@ vector<pb_linear_combination<FieldT>> LibsnarkProofSystem::ConstrainINTT(
 
                 out_lc[indexLo]        = g1.out;
                 out_max_value[indexLo] = g1.out_max_value;
+                //                out_lc[indexLo].evaluate(pb);
 
                 out_lc[indexHi]        = g3.out;
                 out_max_value[indexHi] = g3.out_max_value;
+                //                out_lc[indexHi].evaluate(pb);
 
                 (*element)[indexLo] = loVal;
                 (*element)[indexHi] = omegaFactor;
@@ -505,8 +528,7 @@ vector<pb_linear_combination<FieldT>> LibsnarkProofSystem::ConstrainINTT(
 
     for (i = 0; i < n; i++) {
         (*element)[i].ModMulFastConstEq(cycloOrderInv, modulus, preconCycloOrderInv);
-        LazyMulModGadget<FieldT> g(this->pb, out_lc[i], out_max_value[i], FieldT(cycloOrderInv.ConvertToInt()),
-                                   modulus.ConvertToInt());
+        LazyMulModGadget<FieldT> g(this->pb, out_lc[i], out_max_value[i], FieldT(cycloOrderInv.ConvertToInt()), q);
         g.generate_r1cs_constraints();
         g.generate_r1cs_witness();
         out_lc[i]        = g.out;

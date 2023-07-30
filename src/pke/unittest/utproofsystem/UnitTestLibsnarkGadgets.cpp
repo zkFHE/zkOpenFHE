@@ -114,14 +114,26 @@ TEST(libsnark_openfhe_gadgets, intt) {
 
     usint msb = lbcrypto::GetMSB64(CycloOrderHf - 1);
 
-    ps.ConstrainINTT(ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInverseReverseTableByModulus[modulus],
-                     ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInversePreconReverseTableByModulus[modulus],
-                     ChineseRemainderTransformFTTNat<VecType>::m_cycloOrderInverseTableByModulus[modulus][msb],
-                     ChineseRemainderTransformFTTNat<VecType>::m_cycloOrderInversePreconTableByModulus[modulus][msb],
-                     &in_0_0, &out_0_0, *LibsnarkProofSystem::GetProofMetadata(ctxt), 0, 0);
+    auto in_lc = (*LibsnarkProofSystem::GetProofMetadata(ctxt))[0][0];
+    for (size_t i = 0; i < out_0_0.GetLength(); ++i) {
+        assert(ps.pb.lc_val(in_lc[i]) == FieldT(in_0_0[i].Mod(modulus).ConvertToInt()));
+    }
+
+    auto out_lc = ps.ConstrainINTT(
+        ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInverseReverseTableByModulus[modulus],
+        ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInversePreconReverseTableByModulus[modulus],
+        ChineseRemainderTransformFTTNat<VecType>::m_cycloOrderInverseTableByModulus[modulus][msb],
+        ChineseRemainderTransformFTTNat<VecType>::m_cycloOrderInversePreconTableByModulus[modulus][msb], &in_0_0,
+        &out_0_0, *LibsnarkProofSystem::GetProofMetadata(ctxt), 0, 0);
 
     auto pb = ps.pb;
     EXPECT_EQ(pb.is_satisfied(), true);
+
+    FieldT q(modulus.template ConvertToInt<unsigned long>());
+    for (size_t i = 0; i < out_0_0.GetLength(); ++i) {
+        out_lc[i].evaluate(pb);
+        EXPECT_EQ(mod(pb.lc_val(out_lc[i]), q), FieldT(out_0_0[i].ConvertToInt()));
+    }
 }
 
 TEST(libsnark_openfhe_gadgets, switch_modulus) {
