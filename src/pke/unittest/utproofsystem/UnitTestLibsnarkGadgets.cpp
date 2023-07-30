@@ -184,11 +184,14 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
                               in_metadata.max_value[0][0], (out_metadata[0][0]), out_metadata.max_value[0][0]);
 
     auto pb = ps.pb;
-    cout << pb.num_inputs() << endl;
-    cout << pb.num_variables() << endl;
-    cout << pb.num_constraints() << endl;
 
     EXPECT_EQ(pb.is_satisfied(), true);
+
+    auto out_lc = out_metadata[0][0];
+    for (size_t i = 0; i < out_0.GetLength(); ++i) {
+        out_lc[i].evaluate(pb);
+        EXPECT_EQ(pb.lc_val(out_lc[i]), FieldT(out_0[i].ConvertToInt()));
+    }
 }
 
 };  // namespace
