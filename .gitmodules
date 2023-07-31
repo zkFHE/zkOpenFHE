@@ -13,3 +13,6 @@
 [submodule "third-party/libsnark"]
 	path = third-party/libsnark
 	url = https://github.com/cknabs/libsnark
+[submodule "doe-suite"]
+	path = doe-suite
+	url = git@github.com:nicolas-kuechler/doe-suite.git
