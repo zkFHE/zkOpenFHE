@@ -334,7 +334,7 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
     cout << "#constraints: " << pb.num_constraints() << endl;
 }
 
-TEST(libsnark_openfhe_gadgets, key_switch_core) {
+TEST(libsnark_openfhe_gadgets, key_switch_precompute_core) {
     libff::default_ec_pp::init_public_params();
 
     CCParams<CryptoContextBGVRNS> parameters;
@@ -354,7 +354,7 @@ TEST(libsnark_openfhe_gadgets, key_switch_core) {
     Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
 
     auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-    cryptoContext->ModReduceInPlace(ctxt); // Reduce number of levels to make test faster
+    cryptoContext->ModReduceInPlace(ctxt);  // Reduce number of levels to make test faster
 
     const DCRTPoly in = ctxt->GetElements()[0];
     const std::shared_ptr<vector<DCRTPoly>> out =
@@ -390,6 +390,84 @@ TEST(libsnark_openfhe_gadgets, key_switch_core) {
     cout << "#inputs:      " << pb.num_inputs() << endl;
     cout << "#variables:   " << pb.num_variables() << endl;
     cout << "#constraints: " << pb.num_constraints() << endl;
+}
+
+TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
+    libff::default_ec_pp::init_public_params();
+
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(2);
+    parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    // use BV instead of HYBRID, as it is a lot simpler to arithmetize, even if it requires a quadratic number of NTTs
+    parameters.SetKeySwitchTechnique(KeySwitchTechnique::BV);
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+
+    cryptoContext->Enable(PKE);
+    cryptoContext->Enable(KEYSWITCH);
+    cryptoContext->Enable(LEVELEDSHE);
+
+    KeyPair<DCRTPoly> keyPair;
+    keyPair = cryptoContext->KeyGen();
+    cryptoContext->EvalMultKeyGen(keyPair.secretKey);
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
+
+    auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    ctxt      = cryptoContext->EvalMultNoRelin(ctxt, cryptoContext->Encrypt(keyPair.publicKey, plaintext1));
+
+    const DCRTPoly in = ctxt->GetElements()[0];
+    const std::shared_ptr<vector<DCRTPoly>> digits =
+        KeySwitchBV().EvalKeySwitchPrecomputeCore(in, cryptoContext->GetCryptoParameters());
+
+    const auto evalKeyVec = cryptoContext->GetEvalMultKeyVector(ctxt->GetKeyTag());
+    auto evk              = evalKeyVec[0];
+    auto paramsQl         = in.GetParams();
+    auto out              = KeySwitchBV().EvalFastKeySwitchCore(digits, evk, paramsQl);
+
+    LibsnarkProofSystem ps(cryptoContext);
+    //    ps.ConstrainPublicInput(ctxt);
+    //    LibsnarkProofMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+
+    vector<vector<vector<pb_linear_combination<FieldT>>>> in_lc((*digits).size());
+    vector<vector<FieldT>> in_max_value((*digits).size());
+    for (size_t i = 0; i < in_lc.size(); ++i) {
+        in_lc[i].resize((*digits)[i].GetNumOfElements());
+        in_max_value[i].resize((*digits)[i].GetNumOfElements());
+        for (size_t j = 0; j < in_lc[i].size(); ++j) {
+            in_max_value[i][j] = FieldT((*digits)[i].GetElementAtIndex(j).GetModulus().ConvertToInt());
+            in_lc[i][j].resize((*digits)[i].GetElementAtIndex(j).GetValues().GetLength());
+            for (size_t k = 0; k < in_lc[i][j].size(); ++k) {
+                pb_variable<FieldT> x;
+                x.allocate(ps.pb);
+                ps.pb.val(x) = FieldT((*digits)[i].GetElementAtIndex(j).GetValues()[k].ConvertToInt());
+                in_lc[i][j][k].assign(ps.pb, x);
+            }
+        }
+    }
+    vector<vector<vector<pb_linear_combination<FieldT>>>> out_lc;
+    vector<vector<FieldT>> out_max_value;
+
+    cout << "in.GetNumOfElements() = " << in.GetNumOfElements() << endl;
+    ps.ConstrainFastKeySwitchCore(digits, evk, paramsQl, out, in_lc, in_max_value, out_lc, out_max_value);
+
+    auto pb = ps.pb;
+
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
+
+    EXPECT_EQ(pb.is_satisfied(), true);
+
+    for (size_t i = 0; i < out_lc.size(); ++i) {
+        for (size_t j = 0; j < out_lc[i].size(); ++j) {
+            auto q = FieldT((*out)[i].GetElementAtIndex(j).GetModulus().template ConvertToInt<unsigned long>());
+            for (size_t k = 0; k < out_lc[j].size(); ++k) {
+                out_lc[i][j][k].evaluate(pb);
+                auto expected = (*out)[i].GetElementAtIndex(j).GetValues()[k];
+                EXPECT_EQ(mod(pb.lc_val(out_lc[i][j][k]), q), FieldT(expected.ConvertToInt()));
+            }
+        }
+    }
 }
 
 };  // namespace

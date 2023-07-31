@@ -359,7 +359,7 @@ void LibsnarkProofSystem::ConstrainSwitchModulus(
     const typename VecType::Integer& modulusArb, const typename VecType::Integer& rootOfUnityArb,
     const PolyImpl<VecType>& in, const PolyImpl<VecType>& out, const vector<pb_linear_combination<FieldT>>& in_lc,
     const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value) {
-    /**Switches the integers in the vector to values corresponding to the new
+/**Switches the integers in the vector to values corresponding to the new
  * modulus.
  * Algorithm: Integer i, Old Modulus om, New Modulus nm,
  * delta = abs(om-nm):
@@ -890,6 +890,146 @@ void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
             }
             // currentDCRTPoly.m_format = Format::EVALUATION;
             // result[i] = std::move(currentDCRTPoly);
+        }
+    }
+}
+
+void LibsnarkProofSystem::ConstrainFastKeySwitchCore(
+    const std::shared_ptr<std::vector<DCRTPoly>>& digits, const EvalKey<DCRTPoly>& evalKey,
+    const std::shared_ptr<DCRTPoly::Params>& paramsQl, std::shared_ptr<std::vector<DCRTPoly>>& out,
+    const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc, const vector<vector<FieldT>>& in_max_value,
+    vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc, vector<vector<FieldT>>& out_max_value) {
+    std::vector<DCRTPoly> bv(evalKey->GetBVector());
+    std::vector<DCRTPoly> av(evalKey->GetAVector());
+
+    auto sizeQ    = bv[0].GetParams()->GetParams().size();
+    auto sizeQl   = paramsQl->GetParams().size();
+    size_t diffQl = sizeQ - sizeQl;
+
+    for (size_t k = 0; k < bv.size(); k++) {
+        av[k].DropLastElements(diffQl);
+        bv[k].DropLastElements(diffQl);
+    }
+
+    out_lc        = vector<vector<vector<pb_linear_combination<FieldT>>>>(in_lc);
+    out_max_value = (in_max_value);
+
+    // av, bv are public constants, digits are private variables
+    DCRTPoly ct1 = (av[0] * (*digits)[0]);
+    DCRTPoly ct0 = (bv[0] * (*digits)[0]);
+    //    DCRTPoly ct1((*digits)[0]);
+    //    DCRTPoly ct0((*digits)[0]);
+    //    ct1 *= av[0];
+    //    ct0 *= bv[0];
+
+    out_lc = vector<vector<vector<pb_linear_combination<FieldT>>>>(2);
+    out_lc[0].resize((*digits)[0].GetNumOfElements());
+    out_lc[1].resize((*digits)[0].GetNumOfElements());
+
+    out_max_value = vector<vector<FieldT>>(2);
+    out_max_value[0].resize((*digits)[0].GetNumOfElements());
+    out_max_value[1].resize((*digits)[0].GetNumOfElements());
+
+    auto ct_max_value = vector<vector<vector<FieldT>>>(2);
+    ct_max_value[0].resize((*digits)[0].GetNumOfElements());
+    ct_max_value[1].resize((*digits)[0].GetNumOfElements());
+
+    for (size_t j = 0; j < (*digits)[0].GetNumOfElements(); ++j) {
+        out_lc[0][j].resize((*digits)[0].GetElementAtIndex(j).GetLength());
+        out_lc[1][j].resize((*digits)[0].GetElementAtIndex(j).GetLength());
+        ct_max_value[0][j].resize((*digits)[0].GetElementAtIndex(j).GetLength());
+        ct_max_value[1][j].resize((*digits)[0].GetElementAtIndex(j).GetLength());
+        size_t modulus = (*digits)[0].GetElementAtIndex(j).GetModulus().ConvertToInt();
+        for (size_t k = 0; k < (*digits)[0].GetElementAtIndex(j).GetLength(); ++k) {
+#ifdef PROOFSYSTEM_CHECK_STRICT
+            in_lc[0][j][k].evaluate(pb);
+            assert(lt_eq(pb.lc_val(in_lc[0][j][k]), in_max_value[0][j]));
+            PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(in_lc[0][j][k]), FieldT(modulus)),
+                                  (*digits)[0].GetElementAtIndex(j).GetValues()[k].ConvertToInt());
+#endif
+            auto av_0jk = av[0].GetElementAtIndex(j).GetValues()[k];
+            LazyMulModGadget<FieldT> g1(pb, in_lc[0][j][k], in_max_value[0][j], FieldT(av_0jk.ConvertToInt()), modulus);
+            g1.generate_r1cs_constraints();
+            g1.generate_r1cs_witness();
+            out_lc[1][j][k]       = g1.out;
+            ct_max_value[1][j][k] = g1.out_max_value;
+#ifdef PROOFSYSTEM_CHECK_STRICT
+            out_lc[1][j][k].evaluate(pb);
+            assert(lt_eq(pb.lc_val(out_lc[1][j][k]), ct_max_value[1][j][k]));
+            PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[1][j][k]), FieldT(modulus)),
+                                  ct1.GetElementAtIndex(j).GetValues()[k].ConvertToInt());
+#endif
+
+            auto bv_0jk = bv[0].GetElementAtIndex(j).GetValues()[k];
+            LazyMulModGadget<FieldT> g0(pb, in_lc[0][j][k], in_max_value[0][j], FieldT(bv_0jk.ConvertToInt()), modulus);
+            g0.generate_r1cs_constraints();
+            g0.generate_r1cs_witness();
+            out_lc[0][j][k]       = g0.out;
+            ct_max_value[0][j][k] = g0.out_max_value;
+#ifdef PROOFSYSTEM_CHECK_STRICT
+            out_lc[0][j][k].evaluate(pb);
+            assert(lt_eq(pb.lc_val(out_lc[0][j][k]), ct_max_value[0][j][k]));
+            PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[0][j][k]), FieldT(modulus)),
+                                  ct0.GetElementAtIndex(j).GetValues()[k].ConvertToInt());
+#endif
+        }
+    }
+
+    for (usint i = 1; i < (*digits).size(); ++i) {
+        ct0 += (bv[i] * (*digits)[i]);
+        ct1 += (av[i] * (*digits)[i]);
+
+        for (size_t j = 0; j < (*digits)[0].GetNumOfElements(); ++j) {
+            out_lc[0][j].resize((*digits)[0].GetElementAtIndex(j).GetLength());
+            out_lc[1][j].resize((*digits)[0].GetElementAtIndex(j).GetLength());
+            size_t modulus = (*digits)[0].GetElementAtIndex(j).GetModulus().ConvertToInt();
+            for (size_t k = 0; k < (*digits)[0].GetElementAtIndex(j).GetLength(); ++k) {
+                auto bv_ijk = bv[i].GetElementAtIndex(j).GetValues()[k];
+                LazyMulModGadget<FieldT> g0(pb, in_lc[i][j][k], in_max_value[i][j], FieldT(bv_ijk.ConvertToInt()),
+                                            modulus);
+                g0.generate_r1cs_constraints();
+                g0.generate_r1cs_witness();
+                LazyAddModGadget<FieldT> g0_add(pb, g0.out, g0.out_max_value, out_lc[0][j][k], ct_max_value[0][j][k],
+                                                modulus);
+                g0_add.generate_r1cs_constraints();
+                g0_add.generate_r1cs_witness();
+                out_lc[0][j][k]       = g0_add.out;
+                ct_max_value[0][j][k] = g0_add.out_max_value;
+#ifdef PROOFSYSTEM_CHECK_STRICT
+                out_lc[0][j][k].evaluate(pb);
+                assert(lt_eq(pb.lc_val(out_lc[0][j][k]), ct_max_value[0][j][k]));
+                PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[0][j][k]), FieldT(modulus)),
+                                      ct0.GetElementAtIndex(j).GetValues()[k].ConvertToInt());
+#endif
+
+                auto av_ijk = av[i].GetElementAtIndex(j).GetValues()[k];
+                LazyMulModGadget<FieldT> g1(pb, in_lc[i][j][k], in_max_value[i][j], FieldT(av_ijk.ConvertToInt()),
+                                            modulus);
+                g1.generate_r1cs_constraints();
+                g1.generate_r1cs_witness();
+                LazyAddModGadget<FieldT> g1_add(pb, g1.out, g1.out_max_value, out_lc[1][j][k], ct_max_value[1][j][k],
+                                                modulus);
+                g0_add.generate_r1cs_constraints();
+                g0_add.generate_r1cs_witness();
+                out_lc[1][j][k]       = g1_add.out;
+                ct_max_value[1][j][k] = g1_add.out_max_value;
+#ifdef PROOFSYSTEM_CHECK_STRICT
+                out_lc[1][j][k].evaluate(pb);
+                assert(lt_eq(pb.lc_val(out_lc[1][j][k]), ct_max_value[1][j][k]));
+                PROOFSYSTEM_ASSERT_EQ(mod(pb.lc_val(out_lc[1][j][k]), FieldT(modulus)),
+                                      ct1.GetElementAtIndex(j).GetValues()[k].ConvertToInt());
+#endif
+            }
+        }
+    }
+    for (size_t i = 0; i < ct_max_value.size(); ++i) {
+        for (size_t j = 0; j < ct_max_value[i].size(); ++j) {
+            out_max_value[i][j] = 0;
+            for (size_t k = 0; k < ct_max_value[i][j].size(); ++k) {
+                if (gt(ct_max_value[i][j][k], out_max_value[i][j])) {
+                    out_max_value[i][j] = ct_max_value[i][j][k];
+                }
+            }
         }
     }
 }

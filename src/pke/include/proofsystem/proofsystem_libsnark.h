@@ -6,6 +6,8 @@
 #include "libsnark/zk_proof_systems/ppzksnark/r1cs_ppzksnark/r1cs_ppzksnark.hpp"
 #include "libsnark/common/default_types/r1cs_ppzksnark_pp.hpp"
 #include "libsnark/gadgetlib1/pb_variable.hpp"
+#include "key/evalkey.h"
+
 #include <vector>
 using std::vector;
 
@@ -96,6 +98,14 @@ public:
                                           const vector<FieldT>& in_max_value,
                                           vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                           vector<vector<FieldT>>& out_max_value);
+
+    void ConstrainFastKeySwitchCore(const std::shared_ptr<std::vector<DCRTPoly>>& digits,
+                                    const EvalKey<DCRTPoly>& evalKey, const std::shared_ptr<DCRTPoly::Params>& paramsQl,
+                                    std::shared_ptr<std::vector<DCRTPoly>>& out,
+                                    const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc,
+                                    const vector<vector<FieldT>>& in_max_value,
+                                    vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
+                                    vector<vector<FieldT>>& out_max_value);
 
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
         FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkProofMetadata&>(vars));
