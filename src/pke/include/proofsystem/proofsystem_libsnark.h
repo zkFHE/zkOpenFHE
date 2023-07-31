@@ -91,6 +91,7 @@ public:
                                 const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
                                 FieldT& out_max_value);
 
+    template <typename DCRTPoly>
     void ConstrainKeySwitchPrecomputeCore(const DCRTPoly& in,
                                           const std::shared_ptr<CryptoParametersBase<DCRTPoly>>& cryptoParamsBase,
                                           const std::shared_ptr<std::vector<DCRTPoly>>& out,
@@ -99,13 +100,23 @@ public:
                                           vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                           vector<vector<FieldT>>& out_max_value);
 
-    void ConstrainFastKeySwitchCore(const std::shared_ptr<std::vector<DCRTPoly>>& digits,
-                                    const EvalKey<DCRTPoly>& evalKey, const std::shared_ptr<DCRTPoly::Params>& paramsQl,
-                                    std::shared_ptr<std::vector<DCRTPoly>>& out,
+    template <typename DCRTPoly>
+    void ConstrainFastKeySwitchCore(const EvalKey<DCRTPoly>& evalKey,
+                                    const std::shared_ptr<typename DCRTPoly::Params>& paramsQl,
                                     const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc,
                                     const vector<vector<FieldT>>& in_max_value,
                                     vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                     vector<vector<FieldT>>& out_max_value);
+
+    template <typename DCRTPoly>
+    void ConstrainFastKeySwitchCore(
+        const std::shared_ptr<std::vector<DCRTPoly>>& digits, const EvalKey<DCRTPoly>& evalKey,
+        const std::shared_ptr<typename DCRTPoly::Params>& paramsQl, std::shared_ptr<std::vector<DCRTPoly>>& out,
+        const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc, const vector<vector<FieldT>>& in_max_value,
+        vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc, vector<vector<FieldT>>& out_max_value);
+
+    template <typename DCRTPoly>
+    void ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext, Ciphertext<DCRTPoly>& out);
 
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
         FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkProofMetadata&>(vars));
@@ -119,11 +130,11 @@ public:
                                  const std::shared_ptr<LibsnarkProofMetadata>& metadata);
 
 protected:
-    void constrain_addmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
-                               const size_t index_2, LibsnarkProofMetadata& out, const size_t index_out);
-    void constrain_submod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
-                               const size_t index_2, LibsnarkProofMetadata& out, const size_t index_out);
-    void constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1, const LibsnarkProofMetadata& in2,
-                               const size_t index_2, LibsnarkProofMetadata& out, const size_t index_out);
+    void constrain_addmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
+                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
+    void constrain_submod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
+                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
+    void constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
+                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
 };
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H

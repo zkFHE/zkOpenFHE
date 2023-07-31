@@ -470,4 +470,67 @@ TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
     }
 }
 
+TEST(libsnark_openfhe_gadgets, relin) {
+    libff::default_ec_pp::init_public_params();
+
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    // use BV instead of HYBRID, as it is a lot simpler to arithmetize, even if it requires a quadratic number of NTTs
+    parameters.SetKeySwitchTechnique(KeySwitchTechnique::BV);
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+
+    cryptoContext->Enable(PKE);
+    cryptoContext->Enable(KEYSWITCH);
+    cryptoContext->Enable(LEVELEDSHE);
+
+    KeyPair<DCRTPoly> keyPair;
+    keyPair = cryptoContext->KeyGen();
+    cryptoContext->EvalMultKeyGen(keyPair.secretKey);
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
+
+    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    auto ctxt2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    cryptoContext->ModReduceInPlace(ctxt1);
+    cryptoContext->ModReduceInPlace(ctxt2);
+    auto in  = cryptoContext->EvalMultNoRelin(ctxt1, ctxt2);
+    auto out = cryptoContext->Relinearize(in);
+    auto old_in(in);
+    auto old_out(out);
+
+    LibsnarkProofSystem ps(cryptoContext);
+    ps.ConstrainPublicInput(in);
+    LibsnarkProofMetadata in_metadata = *(LibsnarkProofSystem::GetProofMetadata(in));
+
+    cout << "in.GetNumOfElements() = " << in->GetElements()[0].GetNumOfElements() << endl;
+    ps.ConstrainRelin(in, out);
+
+    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(in));
+
+    // Adding constraints should not modify the values of the ciphertexts, only the metadata
+    EXPECT_EQ(in, old_in);
+    EXPECT_EQ(out, old_out);
+
+    auto pb = ps.pb;
+
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
+
+    EXPECT_EQ(pb.is_satisfied(), true);
+
+    for (size_t i = 0; i < out_metadata.size(); ++i) {
+        for (size_t j = 0; j < out_metadata[i].size(); ++j) {
+            auto q =
+                FieldT(out->GetElements()[i].GetElementAtIndex(j).GetModulus().template ConvertToInt<unsigned long>());
+            for (size_t k = 0; k < out_metadata[i][j].size(); ++k) {
+                out_metadata[i][j][k].evaluate(pb);
+                auto expected = out->GetElements()[i].GetElementAtIndex(j).GetValues()[k];
+                EXPECT_EQ(mod(pb.lc_val(out_metadata[i][j][k]), q), FieldT(expected.ConvertToInt()));
+            }
+        }
+    }
+}
+
 };  // namespace

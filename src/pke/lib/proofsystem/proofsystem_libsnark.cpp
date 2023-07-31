@@ -4,6 +4,7 @@
 #include "proofsystem/proofsystem_libsnark.h"
 #include "proofsystem/gadgets_libsnark.h"
 #include "schemerns/rns-cryptoparameters.h"
+#include "keyswitch/keyswitch-bv.h"
 
 #include <vector>
 #include <cassert>
@@ -798,6 +799,7 @@ void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const DCRTPoly
     }
 }
 
+template <typename DCRTPoly>
 void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
     const DCRTPoly& in, const std::shared_ptr<CryptoParametersBase<DCRTPoly>>& cryptoParamsBase,
     const std::shared_ptr<std::vector<DCRTPoly>>& out, const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
@@ -805,11 +807,14 @@ void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
     vector<vector<FieldT>>& out_max_value) {
     const auto cryptoParams = std::dynamic_pointer_cast<CryptoParametersRNS>(cryptoParamsBase);
 
-    out_lc.resize(out->size());
-    out_max_value.resize(out->size());
-    for (size_t i = 0; i < out->size(); ++i) {
-        out_lc[i].resize((*out)[i].GetNumOfElements());
-        out_max_value[i].resize((*out)[i].GetNumOfElements());
+    const size_t num_levels = in_lc.size();
+    const size_t ring_dim   = in_lc[0].size();
+
+    out_lc.resize(num_levels);
+    out_max_value.resize(num_levels);
+    for (size_t i = 0; i < num_levels; ++i) {
+        out_lc[i].resize(num_levels);
+        out_max_value[i].resize(num_levels);
     }
 
     // Taken from DCRTPolyImpl<VecType>::CRTDecompose
@@ -854,11 +859,11 @@ void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
     ConstrainSetFormat(Format::COEFFICIENT, in, input, in_lc, in_max_value, in_coeff_lc, in_coeff_max_value);
 
     // out[k] holds a representation of the k-th limb of in, i.e., out[k] = f(in[k])
-    for (usint i = 0; i < in.GetNumOfElements(); i++) {
+    for (usint i = 0; i < num_levels; i++) {
         if (baseBits == 0) {
             //            DCRTPolyType currentDCRTPoly = input.Clone();
 
-            for (usint k = 0; k < in.GetNumOfElements(); k++) {
+            for (usint k = 0; k < num_levels; k++) {
                 auto temp(input.GetElementAtIndex(i));
                 auto old_temp(temp);
                 auto old_temp_lc        = in_coeff_lc[i];
@@ -894,9 +899,120 @@ void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
     }
 }
 
+template <typename DCRTPoly>
+void LibsnarkProofSystem::ConstrainFastKeySwitchCore(const EvalKey<DCRTPoly>& evalKey,
+                                                     const std::shared_ptr<typename DCRTPoly::Params>& paramsQl,
+                                                     const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc,
+                                                     const vector<vector<FieldT>>& in_max_value,
+                                                     vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
+                                                     vector<vector<FieldT>>& out_max_value) {
+    const auto n = in_lc[0].size();
+
+    std::vector<DCRTPoly> bv(evalKey->GetBVector());
+    std::vector<DCRTPoly> av(evalKey->GetAVector());
+
+    auto sizeQ    = bv[0].GetParams()->GetParams().size();
+    auto sizeQl   = paramsQl->GetParams().size();
+    size_t diffQl = sizeQ - sizeQl;
+
+    for (size_t k = 0; k < bv.size(); k++) {
+        av[k].DropLastElements(diffQl);
+        bv[k].DropLastElements(diffQl);
+    }
+
+    out_lc        = vector<vector<vector<pb_linear_combination<FieldT>>>>(in_lc);
+    out_max_value = (in_max_value);
+
+    // av, bv are public constants, digits are private variables
+    //    DCRTPoly ct1 = (av[0] * (*digits)[0]);
+    //    DCRTPoly ct0 = (bv[0] * (*digits)[0]);
+
+    out_lc = vector<vector<vector<pb_linear_combination<FieldT>>>>(2);
+    out_lc[0].resize(n);
+    out_lc[1].resize(n);
+
+    out_max_value = vector<vector<FieldT>>(2);
+    out_max_value[0].resize(n);
+    out_max_value[1].resize(n);
+
+    auto ct_max_value = vector<vector<vector<FieldT>>>(2);
+    ct_max_value[0].resize(n);
+    ct_max_value[1].resize(n);
+
+    for (size_t j = 0; j < n; ++j) {
+        out_lc[0][j].resize(in_lc[0][j].size());
+        out_lc[1][j].resize(in_lc[0][j].size());
+        ct_max_value[0][j].resize(in_lc[0][j].size());
+        ct_max_value[1][j].resize(in_lc[0][j].size());
+        size_t modulus = av[0].GetElementAtIndex(j).GetModulus().ConvertToInt();
+        for (size_t k = 0; k < in_lc[0][j].size(); ++k) {
+            auto av_0jk = av[0].GetElementAtIndex(j).GetValues()[k];
+            LazyMulModGadget<FieldT> g1(pb, in_lc[0][j][k], in_max_value[0][j], FieldT(av_0jk.ConvertToInt()), modulus);
+            g1.generate_r1cs_constraints();
+            g1.generate_r1cs_witness();
+            out_lc[1][j][k]       = g1.out;
+            ct_max_value[1][j][k] = g1.out_max_value;
+
+            auto bv_0jk = bv[0].GetElementAtIndex(j).GetValues()[k];
+            LazyMulModGadget<FieldT> g0(pb, in_lc[0][j][k], in_max_value[0][j], FieldT(bv_0jk.ConvertToInt()), modulus);
+            g0.generate_r1cs_constraints();
+            g0.generate_r1cs_witness();
+            out_lc[0][j][k]       = g0.out;
+            ct_max_value[0][j][k] = g0.out_max_value;
+        }
+    }
+
+    for (usint i = 1; i < in_lc.size(); ++i) {
+        //        ct0 += (bv[i] * (*digits)[i]);
+        //        ct1 += (av[i] * (*digits)[i]);
+
+        for (size_t j = 0; j < n; ++j) {
+            out_lc[0][j].resize(in_lc[0][j].size());
+            out_lc[1][j].resize(in_lc[0][j].size());
+            size_t modulus = av[0].GetElementAtIndex(j).GetModulus().ConvertToInt();
+            for (size_t k = 0; k < in_lc[0][j].size(); ++k) {
+                auto bv_ijk = bv[i].GetElementAtIndex(j).GetValues()[k];
+                LazyMulModGadget<FieldT> g0(pb, in_lc[i][j][k], in_max_value[i][j], FieldT(bv_ijk.ConvertToInt()),
+                                            modulus);
+                g0.generate_r1cs_constraints();
+                g0.generate_r1cs_witness();
+                LazyAddModGadget<FieldT> g0_add(pb, g0.out, g0.out_max_value, out_lc[0][j][k], ct_max_value[0][j][k],
+                                                modulus);
+                g0_add.generate_r1cs_constraints();
+                g0_add.generate_r1cs_witness();
+                out_lc[0][j][k]       = g0_add.out;
+                ct_max_value[0][j][k] = g0_add.out_max_value;
+
+                auto av_ijk = av[i].GetElementAtIndex(j).GetValues()[k];
+                LazyMulModGadget<FieldT> g1(pb, in_lc[i][j][k], in_max_value[i][j], FieldT(av_ijk.ConvertToInt()),
+                                            modulus);
+                g1.generate_r1cs_constraints();
+                g1.generate_r1cs_witness();
+                LazyAddModGadget<FieldT> g1_add(pb, g1.out, g1.out_max_value, out_lc[1][j][k], ct_max_value[1][j][k],
+                                                modulus);
+                g0_add.generate_r1cs_constraints();
+                g0_add.generate_r1cs_witness();
+                out_lc[1][j][k]       = g1_add.out;
+                ct_max_value[1][j][k] = g1_add.out_max_value;
+            }
+        }
+    }
+    for (size_t i = 0; i < ct_max_value.size(); ++i) {
+        for (size_t j = 0; j < ct_max_value[i].size(); ++j) {
+            out_max_value[i][j] = 0;
+            for (size_t k = 0; k < ct_max_value[i][j].size(); ++k) {
+                if (gt(ct_max_value[i][j][k], out_max_value[i][j])) {
+                    out_max_value[i][j] = ct_max_value[i][j][k];
+                }
+            }
+        }
+    }
+}
+
+template <typename DCRTPoly>
 void LibsnarkProofSystem::ConstrainFastKeySwitchCore(
     const std::shared_ptr<std::vector<DCRTPoly>>& digits, const EvalKey<DCRTPoly>& evalKey,
-    const std::shared_ptr<DCRTPoly::Params>& paramsQl, std::shared_ptr<std::vector<DCRTPoly>>& out,
+    const std::shared_ptr<typename DCRTPoly::Params>& paramsQl, std::shared_ptr<std::vector<DCRTPoly>>& out,
     const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc, const vector<vector<FieldT>>& in_max_value,
     vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc, vector<vector<FieldT>>& out_max_value) {
     std::vector<DCRTPoly> bv(evalKey->GetBVector());
@@ -1032,6 +1148,71 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(
             }
         }
     }
+}
+
+template <typename DCRTPoly>
+void LibsnarkProofSystem::ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext, Ciphertext<DCRTPoly>& out) {
+    assert(!!ciphertext);
+    assert(!!out);
+    assert(ciphertext->GetElements().size() == 3);  // We don't support higher-order relin
+
+    const LibsnarkProofMetadata in_metadata = *(GetProofMetadata(ciphertext));
+    LibsnarkProofMetadata out_metadata(2);
+
+    const auto evalKeyVec = ciphertext->GetCryptoContext()->GetEvalMultKeyVector(ciphertext->GetKeyTag());
+    assert(evalKeyVec.size() >= (ciphertext->GetElements().size() - 2));
+
+    auto cv = ciphertext->GetElements();
+    for (auto& c : cv) {
+        assert(c.GetFormat() == Format::EVALUATION);  // Should always hold for BGV, no need to constrain
+
+        // c.SetFormat(Format::EVALUATION);
+    }
+
+    auto algo = ciphertext->GetCryptoContext()->GetScheme();
+
+    out_metadata           = LibsnarkProofMetadata(2);
+    out_metadata[0]        = in_metadata[0];
+    out_metadata[1]        = in_metadata[1];
+    out_metadata.max_value = {in_metadata.max_value[0], in_metadata.max_value[1]};
+    out_metadata.modulus   = in_metadata.modulus;
+
+    for (size_t j = 2; j < cv.size(); j++) {
+        //        auto ab      = algo->KeySwitchCore(cv[j], evalKeyVec[j - 2]);
+        auto evalKey = evalKeyVec[j - 2];
+
+        ///
+        const auto cryptoParamsBase = evalKey->GetCryptoParameters();
+        std::shared_ptr<std::vector<DCRTPoly>> digits =
+            KeySwitchBV().EvalKeySwitchPrecomputeCore(cv[j], cryptoParamsBase);
+        std::shared_ptr<std::vector<DCRTPoly>> result =
+            KeySwitchBV().EvalFastKeySwitchCore(digits, evalKey, cv[j].GetParams());
+        ///
+
+        //        const std::shared_ptr<typename DCRTPoly::Params> cryptoParamsBase = evalKey->GetCryptoParameters();
+        vector<vector<vector<pb_linear_combination<FieldT>>>> tmp_lc;
+        vector<vector<FieldT>> tmp_max_value;
+        //        std::shared_ptr<vector<DCRTPoly>> nil = nullptr;
+
+        ConstrainKeySwitchPrecomputeCore(cv[j], evalKey->GetCryptoParameters(), digits, in_metadata[j],
+                                         in_metadata.max_value[j], tmp_lc, tmp_max_value);
+
+        vector<vector<vector<pb_linear_combination<FieldT>>>> tmp2_lc;
+        vector<vector<FieldT>> tmp2_max_value;
+        ConstrainFastKeySwitchCore(digits, evalKey, cv[j].GetParams(), result, tmp_lc, tmp_max_value, tmp2_lc,
+                                   tmp2_max_value);
+
+        //        cv[0] += (*ab)[0];
+        //        cv[1] += (*ab)[1];
+        LibsnarkProofMetadata tmp_metadata(tmp2_lc);
+        tmp_metadata.max_value = tmp2_max_value;
+        tmp_metadata.modulus   = in_metadata.modulus;  // TODO: double-check
+        constrain_addmod_lazy(out_metadata, 0, tmp_metadata, 0, out_metadata, 0);
+        constrain_addmod_lazy(out_metadata, 1, tmp_metadata, 1, out_metadata, 1);
+    }
+    cv.resize(2);
+
+    SetProofMetadata(out, std::make_shared<LibsnarkProofMetadata>(out_metadata));
 }
 
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_CPP
