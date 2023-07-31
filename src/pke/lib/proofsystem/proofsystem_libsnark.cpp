@@ -540,9 +540,9 @@ void LibsnarkProofSystem::ConstrainNTT(const VecType& rootOfUnityTable, const Ve
                 g3.generate_r1cs_constraints();
                 g3.generate_r1cs_witness();
 
-                out_lc[indexLo]         = g2.out;
+                out_lc[indexLo]         = std::move(g2.out);
                 out_max_values[indexLo] = g2.out_max_value;
-                out_lc[indexHi]         = g3.out;
+                out_lc[indexHi]         = std::move(g3.out);
                 out_max_values[indexHi] = g3.out_max_value;
 
                 element[indexLo] = hiVal;
@@ -663,7 +663,7 @@ void LibsnarkProofSystem::ConstrainINTT(const VecType& rootOfUnityInverseTable,
                     ModGadget<FieldT> g_mod(this->pb, out_lc[indexHi], out_max_values[indexHi], q);
                     g_mod.generate_r1cs_constraints();
                     g_mod.generate_r1cs_witness();
-                    hi_reduced           = g_mod.out;
+                    hi_reduced           = std::move(g_mod.out);
                     hi_reduced_max_value = FieldT(q) - 1;
                 }
 
@@ -679,11 +679,11 @@ void LibsnarkProofSystem::ConstrainINTT(const VecType& rootOfUnityInverseTable,
                 g3.generate_r1cs_constraints();
                 g3.generate_r1cs_witness();
 
-                out_lc[indexLo]         = g1.out;
+                out_lc[indexLo]         = std::move(g1.out);
                 out_max_values[indexLo] = g1.out_max_value;
                 //                out_lc[indexLo].evaluate(pb);
 
-                out_lc[indexHi]         = g3.out;
+                out_lc[indexHi]         = std::move(g3.out);
                 out_max_values[indexHi] = g3.out_max_value;
                 //                out_lc[indexHi].evaluate(pb);
 
@@ -713,7 +713,7 @@ void LibsnarkProofSystem::ConstrainINTT(const VecType& rootOfUnityInverseTable,
         LazyMulModGadget<FieldT> g(this->pb, out_lc[i], out_max_values[i], FieldT(cycloOrderInv.ConvertToInt()), q);
         g.generate_r1cs_constraints();
         g.generate_r1cs_witness();
-        out_lc[i]         = g.out;
+        out_lc[i]         = std::move(g.out);
         out_max_values[i] = g.out_max_value;
 
         // Set out_max_value to max of all out_max_values for soundness
@@ -808,7 +808,6 @@ void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
     const auto cryptoParams = std::dynamic_pointer_cast<CryptoParametersRNS>(cryptoParamsBase);
 
     const size_t num_levels = in_lc.size();
-    const size_t ring_dim   = in_lc[0].size();
 
     out_lc.resize(num_levels);
     out_max_value.resize(num_levels);
@@ -950,14 +949,14 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(const EvalKey<DCRTPoly>& ev
             LazyMulModGadget<FieldT> g1(pb, in_lc[0][j][k], in_max_value[0][j], FieldT(av_0jk.ConvertToInt()), modulus);
             g1.generate_r1cs_constraints();
             g1.generate_r1cs_witness();
-            out_lc[1][j][k]       = g1.out;
+            out_lc[1][j][k]       = std::move(g1.out);
             ct_max_value[1][j][k] = g1.out_max_value;
 
             auto bv_0jk = bv[0].GetElementAtIndex(j).GetValues()[k];
             LazyMulModGadget<FieldT> g0(pb, in_lc[0][j][k], in_max_value[0][j], FieldT(bv_0jk.ConvertToInt()), modulus);
             g0.generate_r1cs_constraints();
             g0.generate_r1cs_witness();
-            out_lc[0][j][k]       = g0.out;
+            out_lc[0][j][k]       = std::move(g0.out);
             ct_max_value[0][j][k] = g0.out_max_value;
         }
     }
@@ -980,7 +979,7 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(const EvalKey<DCRTPoly>& ev
                                                 modulus);
                 g0_add.generate_r1cs_constraints();
                 g0_add.generate_r1cs_witness();
-                out_lc[0][j][k]       = g0_add.out;
+                out_lc[0][j][k]       = std::move(g0_add.out);
                 ct_max_value[0][j][k] = g0_add.out_max_value;
 
                 auto av_ijk = av[i].GetElementAtIndex(j).GetValues()[k];
@@ -992,7 +991,7 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(const EvalKey<DCRTPoly>& ev
                                                 modulus);
                 g0_add.generate_r1cs_constraints();
                 g0_add.generate_r1cs_witness();
-                out_lc[1][j][k]       = g1_add.out;
+                out_lc[1][j][k]       = std::move(g1_add.out);
                 ct_max_value[1][j][k] = g1_add.out_max_value;
             }
         }
@@ -1067,7 +1066,7 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(
             LazyMulModGadget<FieldT> g1(pb, in_lc[0][j][k], in_max_value[0][j], FieldT(av_0jk.ConvertToInt()), modulus);
             g1.generate_r1cs_constraints();
             g1.generate_r1cs_witness();
-            out_lc[1][j][k]       = g1.out;
+            out_lc[1][j][k]       = std::move(g1.out);
             ct_max_value[1][j][k] = g1.out_max_value;
 #ifdef PROOFSYSTEM_CHECK_STRICT
             out_lc[1][j][k].evaluate(pb);
@@ -1080,7 +1079,7 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(
             LazyMulModGadget<FieldT> g0(pb, in_lc[0][j][k], in_max_value[0][j], FieldT(bv_0jk.ConvertToInt()), modulus);
             g0.generate_r1cs_constraints();
             g0.generate_r1cs_witness();
-            out_lc[0][j][k]       = g0.out;
+            out_lc[0][j][k]       = std::move(g0.out);
             ct_max_value[0][j][k] = g0.out_max_value;
 #ifdef PROOFSYSTEM_CHECK_STRICT
             out_lc[0][j][k].evaluate(pb);
@@ -1109,7 +1108,7 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(
                                                 modulus);
                 g0_add.generate_r1cs_constraints();
                 g0_add.generate_r1cs_witness();
-                out_lc[0][j][k]       = g0_add.out;
+                out_lc[0][j][k]       = std::move(g0_add.out);
                 ct_max_value[0][j][k] = g0_add.out_max_value;
 #ifdef PROOFSYSTEM_CHECK_STRICT
                 out_lc[0][j][k].evaluate(pb);
@@ -1127,7 +1126,7 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(
                                                 modulus);
                 g0_add.generate_r1cs_constraints();
                 g0_add.generate_r1cs_witness();
-                out_lc[1][j][k]       = g1_add.out;
+                out_lc[1][j][k]       = std::move(g1_add.out);
                 ct_max_value[1][j][k] = g1_add.out_max_value;
 #ifdef PROOFSYSTEM_CHECK_STRICT
                 out_lc[1][j][k].evaluate(pb);
