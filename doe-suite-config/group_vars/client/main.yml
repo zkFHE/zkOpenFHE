@@ -1,0 +1,7 @@
+---
+
+instance_type: c6gn.xlarge # 4 vCPUs, 8 GB RAM, similar to Google Pixel 7 specs (https://www.gsmarena.com/google_pixel_7-11903.php)
+ec2_volume_size: 16
+
+ec2_image_id: ami-0329d3839379bfd15
+ec2_volume_snapshot: snap-015516222bd6e07d5

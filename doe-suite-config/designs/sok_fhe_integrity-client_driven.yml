@@ -1,0 +1,30 @@
+---
+
+sok_clientdriven_verifier_setup:
+  n_repetitions: 1
+  host_types:
+    server:
+      n: 1
+      init_roles:
+        - setup-base
+        - setup-zkOpenFHE
+      $CMD$: "echo \"TODO: run PROTECT use case to read constraint system, inputs, and generate CRS, and load proof, and verify proof \""
+  base_experiment:
+    dummy_arg: ""
+
+sok_clientdriven_prover_prove:
+  n_repetitions: 1
+  host_types:
+    client:
+      n: 1
+      init_roles:
+        - setup-base
+        - setup-zkOpenFHE
+      $CMD$: "echo \"TODO: run PROTECT use case to read constraint system, inputs, and generate proof\""
+  base_experiment:
+    dummy_arg: ""
+
+$ETL$: # ensures that stderr.log is empty everywhere and that no files are generated except stdout.log
+  check_error:
+    experiments: "*"
+    extractors: { ErrorExtractor: { }, IgnoreExtractor: { } }

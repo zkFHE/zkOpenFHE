@@ -1,0 +1,26 @@
+---
+
+
+- debug:
+    msg: "-> base only"
+  tags: [ print_action ]
+
+- name: Install base packages
+  become: True
+  apt:
+    pkg:
+      # OpenFHE (https://openfhe-development.readthedocs.io/en/latest/sphinx_rsts/intro/installation/linux.html#installing-openfhe-on-linux)
+      - build-essential
+      - cmake
+      - clang
+      #- libomp5
+      - libomp-dev
+      # libsnark (https://github.com/scipr-lab/libsnark#build-instructions)
+      - build-essential
+      - cmake
+      - git
+      - libgmp3-dev
+      - libprocps-dev # libprocps4-dev
+      - python3-markdown # python-markdown
+      - libboost-all-dev
+      - libssl-dev

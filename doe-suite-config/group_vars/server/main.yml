@@ -1,0 +1,7 @@
+---
+
+instance_type: c5.9xlarge
+ec2_volume_size: 16
+
+ec2_image_id: ami-04e601abe3e1a910f
+ec2_volume_snapshot: snap-049063b060f934cb1
