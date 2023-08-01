@@ -15,6 +15,7 @@
       - clang
       #- libomp5
       - libomp-dev
+      - autoconf
       - pkg-config # not listed in OpenFHE docs, but needed
       # libsnark (https://github.com/scipr-lab/libsnark#build-instructions)
       - build-essential
@@ -25,3 +26,8 @@
       - python3-markdown # python-markdown
       - libboost-all-dev
       - libssl-dev
+
+- name: Update all packages to their latest version
+  ansible.builtin.apt:
+    name: "*"
+    state: latest
