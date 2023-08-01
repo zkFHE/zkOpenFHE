@@ -15,6 +15,7 @@
       - clang
       #- libomp5
       - libomp-dev
+      - pkg-config # not listed in OpenFHE docs, but needed
       # libsnark (https://github.com/scipr-lab/libsnark#build-instructions)
       - build-essential
       - cmake

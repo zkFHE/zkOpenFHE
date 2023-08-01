@@ -6,22 +6,12 @@
 
 - name: Install zkOpenFHE from source
   block:
-    - name: Clone zkOpenFHE repository
-      ansible.builtin.git:
-        repo: https://github.com/MarbleHE/zkOpenFHE.git
-        dest: /zkOpenFHE
-
-    - name: Fetch zkOpenFHE dependencies
-      ansible.builtin.shell:
-        cmd: git submodule init && git submodule update
-        chdir: /zkOpenFHE
-
     - name: Create build folder
       ansible.builtin.file:
-        path: /zkOpenFHE/build
+        path: /home/ubuntu/code/build
         state: directory
 
     - name: Build
       ansible.builtin.shell: 
         cmd: cmake ..
-        chdir: /zkOpenFHE/build
+        chdir: /home/ubuntu/code/build
