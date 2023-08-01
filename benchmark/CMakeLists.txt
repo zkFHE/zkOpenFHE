@@ -30,6 +30,7 @@ foreach (app ${BMARK_SRC_FILES})
 		"${REGEX_FLAG} -DHAVE_STEADY_CLOCK -DNDEBUG ${WARNING_FLAG}" )
 	target_link_libraries ( ${exe} ${BMLIBS} )
 	set (BMAPPS ${BMAPPS} ${exe})
+	target_link_libraries( ${exe} PRIVATE snark)
 endforeach()
 
 add_custom_target( allbenchmark )
