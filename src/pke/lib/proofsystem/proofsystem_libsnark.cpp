@@ -262,8 +262,8 @@ void LibsnarkProofSystem::ConstrainMultiplication(const Ciphertext<DCRTPoly>& ct
            "mismatch between number of polynomial elements between ciphertext and metadata for input 2");
     assert(in1.size() == in2.size() && "mismatch between number of polynomial elements between ciphertext inputs");
     assert(
-        ctxt1->GetElements().size() == ctxt_out->GetElements().size() &&
-        "mismatch between number of polynomial elements between ciphertext inputs and output. Are you using the FIXEDMANUAL scaling technique?");
+        ctxt1->GetElements()[0].GetNumOfElements() == ctxt_out->GetElements()[0].GetNumOfElements() &&
+        "mismatch between number of limbs between ciphertext inputs and output. Are you using the FIXEDMANUAL scaling technique?");
     assert(in1.size() == 2);
 
     LibsnarkProofMetadata tmp(2);
@@ -279,9 +279,36 @@ void LibsnarkProofSystem::ConstrainMultiplication(const Ciphertext<DCRTPoly>& ct
         out[i] = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
     }
     out.modulus = in1.modulus;
-    constrain_addmod_lazy(in1, 0, in2, 0, out, 0);
+    constrain_mulmod_lazy(in1, 0, in2, 0, out, 0);
     constrain_addmod_lazy(tmp, 0, tmp, 1, out, 1);
-    constrain_addmod_lazy(in1, 1, in2, 1, out, 2);
+    constrain_mulmod_lazy(in1, 1, in2, 1, out, 2);
+    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
+}
+
+void LibsnarkProofSystem::ConstrainSquare(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out) {
+    const auto in = *GetProofMetadata(ctxt);
+
+    const auto num_limbs = in.modulus.size();
+    assert(
+        ctxt->GetElements()[0].GetNumOfElements() == ctxt_out->GetElements()[0].GetNumOfElements() &&
+        "mismatch between number of limbs between ciphertext input and output. Are you using the FIXEDMANUAL scaling technique?");
+    assert(in.size() == 2);
+
+    LibsnarkProofMetadata tmp(1);
+    for (size_t i = 0; i < tmp.size(); i++) {
+        tmp[i] = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
+    }
+    tmp.modulus = in.modulus;
+    constrain_mulmod_lazy(in, 0, in, 1, tmp, 0);
+
+    LibsnarkProofMetadata out(3);
+    for (size_t i = 0; i < out.size(); i++) {
+        out[i] = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
+    }
+    out.modulus = in.modulus;
+    constrain_mulmod_lazy(in, 0, in, 0, out, 0);
+    constrain_addmod_lazy(tmp, 0, tmp, 0, out, 1);
+    constrain_mulmod_lazy(in, 1, in, 1, out, 2);
     SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
 }
 

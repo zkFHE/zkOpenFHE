@@ -41,6 +41,14 @@ public:
 };
 
 class LibsnarkProofSystem : ProofSystem {
+protected:
+    void constrain_addmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
+                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
+    void constrain_submod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
+                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
+    void constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
+                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
+
 public:
     protoboard<FieldT> pb;
     const CryptoContext<DCRTPoly> cryptoContext;
@@ -59,6 +67,8 @@ public:
 
     void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                  Ciphertext<DCRTPoly>& ctxt_out) override;
+
+    void ConstrainSquare(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
 
     template <typename VecType2>
     void ConstrainSetFormat(Format format, const VecType2& in, const VecType2& out,
@@ -128,13 +138,5 @@ public:
 
     static void SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext,
                                  const std::shared_ptr<LibsnarkProofMetadata>& metadata);
-
-protected:
-    void constrain_addmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
-                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
-    void constrain_submod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
-                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
-    void constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
-                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
 };
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H
