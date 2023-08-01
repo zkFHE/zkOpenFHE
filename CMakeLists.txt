@@ -595,6 +595,11 @@ string(REPLACE " -Werror" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 
 # Add third-party libsnark
 set(CURVE "BN128" CACHE STRING "Default curve: one of ALT_BN128, BN128, EDWARDS, MNT4, MNT6")
+set(MULTICORE ON)
+set(WITH_PROCPS OFF)
+set(WITH_SUPERCOP OFF)
+set(PERFORMANCE ON)
+set(USE_ASM ON)
 add_definitions(-DCURVE_${CURVE})
 add_subdirectory(third-party/libsnark)
 include_directories(third-party/libsnark third-party/libsnark/depends/libfqfft third-party/libsnark/depends/libff)
