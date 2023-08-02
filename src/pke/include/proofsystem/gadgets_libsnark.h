@@ -513,8 +513,10 @@ protected:
     std::shared_ptr<MulGadget<FieldT>> mul;
 
 public:
-    pb_linear_combination<FieldT> in1, in2;
-    FieldT in1_max_value, in2_max_value;
+    pb_linear_combination<FieldT> in1;
+    FieldT in1_max_value;
+    pb_linear_combination<FieldT> in2;
+    FieldT in2_max_value;
     size_t modulus;
     pb_linear_combination<FieldT> out;
     FieldT out_max_value;

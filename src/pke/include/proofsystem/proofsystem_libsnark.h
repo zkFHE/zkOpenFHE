@@ -30,6 +30,7 @@ public:
 
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::vector;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::operator[];
+    using vector<vector<vector<pb_linear_combination<FieldT>>>>::at;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::size;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::operator=;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::push_back;
@@ -144,7 +145,7 @@ public:
 
     template <typename DCRTPoly>
     void ConstrainRotate(const Ciphertext<DCRTPoly>& ctxt_in, int rot_idx, Ciphertext<DCRTPoly>& ctxt_out);
-    void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Plaintext& ctxt2,
+    void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt,
                                Ciphertext<DCRTPoly>& ctxt_out);
 };
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H
