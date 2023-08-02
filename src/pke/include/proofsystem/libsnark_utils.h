@@ -45,6 +45,7 @@ bool lt(const FieldT& x, const FieldT& y) {
     bool res = mpz_cmp(x_mpz, y_mpz) < 0;
     mpz_clear(x_mpz);
     mpz_clear(y_mpz);
+    return res;
 }
 
 template <typename FieldT>
@@ -57,6 +58,7 @@ bool lt_eq(const FieldT& x, const FieldT& y) {
     bool res = mpz_cmp(x_mpz, y_mpz) <= 0;
     mpz_clear(x_mpz);
     mpz_clear(y_mpz);
+    return res;
 }
 
 template <typename FieldT>
@@ -69,6 +71,7 @@ bool gt(const FieldT& x, const FieldT& y) {
     bool res = mpz_cmp(x_mpz, y_mpz) > 0;
     mpz_clear(x_mpz);
     mpz_clear(y_mpz);
+    return res;
 }
 
 template <typename FieldT>
@@ -81,6 +84,7 @@ bool gt_eq(const FieldT& x, const FieldT& y) {
     bool res = mpz_cmp(x_mpz, y_mpz) >= 0;
     mpz_clear(x_mpz);
     mpz_clear(y_mpz);
+    return res;
 }
 
 #endif  //OPENFHE_LIBSNARK_UTILS_H
