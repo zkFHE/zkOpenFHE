@@ -26,6 +26,7 @@ foreach (app ${BMARK_SRC_FILES})
 	add_executable ( ${exe} ${app} )
 	set_property(TARGET ${exe} PROPERTY RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/benchmark)
 	target_include_directories( ${exe} PUBLIC ../third-party/google-benchmark/include )
+	target_include_directories(${exe} PUBLIC ../src/pke/lib/) # TODO FIXME
 	set_target_properties( ${exe} PROPERTIES COMPILE_FLAGS
 		"${REGEX_FLAG} -DHAVE_STEADY_CLOCK -DNDEBUG ${WARNING_FLAG}" )
 	target_link_libraries ( ${exe} ${BMLIBS} )
