@@ -234,6 +234,29 @@ BENCHMARK_F(CustomFixture, Flipped2PC_Server_FHE_Setup)(benchmark::State& state)
     }
 }
 
+BENCHMARK_F(CustomFixture, Flipped2PC_Server_FHE_Eval)(benchmark::State& state) {
+    // BENCH: eval
+    for (auto _ : state) {
+        d_i = cryptoContext->EvalSub(server_pos_i, client_pos_i);
+        d_j = cryptoContext->EvalSub(server_pos_i, client_pos_j);
+
+        d_i_min_d_j = cryptoContext->EvalSub(d_i, d_j);
+        //        d_i_min_d_j_squared = cryptoContext->EvalSquare(d_i_min_d_j);
+        d_i_min_d_j_squared = cryptoContext->EvalMultNoRelin(d_i_min_d_j, d_i_min_d_j);
+        d_i_mul_d_j         = cryptoContext->EvalMultNoRelin(d_i, d_j);
+
+        c_dist = cryptoContext->EvalAdd(d_i_min_d_j_squared, d_i_mul_d_j);
+        // TODO: unclear of where relinearization should happen from the description in the PROTECT paper
+        c_dist_relin = cryptoContext->Relinearize(c_dist);
+
+        c_dist_squared_min_one = cryptoContext->EvalSub(c_dist_relin, one);
+        c_prox                 = cryptoContext->EvalMult(c_dist_relin, c_dist_squared_min_one);
+
+        c_out_blinded = cryptoContext->EvalMult(c_prox, client_random_blinding);
+        output        = c_out_blinded;  //cryptoContext->EvalAdd(c_out_blinded, client_noiseflooding_0);
+    }
+}
+
 /*BENCHMARK_F(CustomFixture, Flipped2PC_Server_ZKP_Setup)(benchmark::State& state) {
     // BENCH: keygen + (double) encryption + ZKP setup
     for (auto _ : state) {
@@ -273,20 +296,15 @@ BENCHMARK_F(CustomFixture, Flipped2PC_ZKP)(benchmark::State& state) {
     // Server.Encode, Server.Encrypt_pk
     LibsnarkProofSystem ps(cryptoContext);
 
-    //    ps.ConstrainPublicInput(server_pos_i);
-    //    ps.ConstrainPublicInput(server_pos_j);
-    //    auto vars_out = ps.ConstrainPublicOutput(output);
+    ps.ConstrainPublicInput(server_pos_i);
+    ps.ConstrainPublicInput(server_pos_j);
+    auto vars_out = ps.ConstrainPublicOutput(output);
 
     // Client.Eval
     //        auto d_i = cryptoContext->EvalSub(client_pos_i, server_pos_i);
     //        auto d_j = cryptoContext->EvalSub(client_pos_j, server_pos_j);
-    //    ps.ConstrainSubstraction(server_pos_i, client_pos_i, d_i);
-    //    ps.ConstrainSubstraction(server_pos_j, client_pos_j, d_j);
-    ///
-    ps.ConstrainPublicInput(d_i);
-    ps.ConstrainPublicInput(d_j);
-    auto vars_out = ps.ConstrainPublicOutput(output);
-    ///
+    ps.ConstrainSubstraction(server_pos_i, client_pos_i, d_i);
+    ps.ConstrainSubstraction(server_pos_j, client_pos_j, d_j);
 
     //        auto d_i_min_d_j         = cryptoContext->EvalSub(d_i, d_j);
     ps.ConstrainSubstraction(d_i, d_j, d_i_min_d_j);
