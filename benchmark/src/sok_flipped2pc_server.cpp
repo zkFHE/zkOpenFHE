@@ -142,9 +142,10 @@ public:
         d_i = cryptoContext->EvalSub(server_pos_i, client_pos_i);
         d_j = cryptoContext->EvalSub(server_pos_i, client_pos_j);
 
-        d_i_min_d_j         = cryptoContext->EvalSub(d_i, d_j);
-        d_i_min_d_j_squared = cryptoContext->EvalSquare(d_i_min_d_j);
-        d_i_mul_d_j         = cryptoContext->EvalMult(d_i, d_j);
+        d_i_min_d_j = cryptoContext->EvalSub(d_i, d_j);
+        //        d_i_min_d_j_squared = cryptoContext->EvalSquare(d_i_min_d_j);
+        d_i_min_d_j_squared = cryptoContext->EvalMultNoRelin(d_i_min_d_j, d_i_min_d_j);
+        d_i_mul_d_j         = cryptoContext->EvalMultNoRelin(d_i, d_j);
 
         c_dist = cryptoContext->EvalAdd(d_i_min_d_j_squared, d_i_mul_d_j);
         // TODO: unclear of where relinearization should happen from the description in the PROTECT paper
@@ -272,20 +273,25 @@ BENCHMARK_F(CustomFixture, Flipped2PC_ZKP)(benchmark::State& state) {
     // Server.Encode, Server.Encrypt_pk
     LibsnarkProofSystem ps(cryptoContext);
 
-    ps.ConstrainPublicInput(server_pos_i);
-    ps.ConstrainPublicInput(server_pos_j);
-    auto vars_out = ps.ConstrainPublicOutput(output);
+    //    ps.ConstrainPublicInput(server_pos_i);
+    //    ps.ConstrainPublicInput(server_pos_j);
+    //    auto vars_out = ps.ConstrainPublicOutput(output);
 
     // Client.Eval
     //        auto d_i = cryptoContext->EvalSub(client_pos_i, server_pos_i);
     //        auto d_j = cryptoContext->EvalSub(client_pos_j, server_pos_j);
-    ps.ConstrainSubstraction(server_pos_i, client_pos_i, d_i);
-    ps.ConstrainSubstraction(server_pos_j, client_pos_j, d_j);
+    //    ps.ConstrainSubstraction(server_pos_i, client_pos_i, d_i);
+    //    ps.ConstrainSubstraction(server_pos_j, client_pos_j, d_j);
+    ///
+    ps.ConstrainPublicInput(d_i);
+    ps.ConstrainPublicInput(d_j);
+    auto vars_out = ps.ConstrainPublicOutput(output);
+    ///
 
     //        auto d_i_min_d_j         = cryptoContext->EvalSub(d_i, d_j);
     ps.ConstrainSubstraction(d_i, d_j, d_i_min_d_j);
     //        auto d_i_min_d_j_squared = cryptoContext->EvalSquare(d_i_min_d_j);
-    ps.ConstrainSquare(d_i_min_d_j, d_i_min_d_j_squared);
+    ps.ConstrainMultiplication(d_i_min_d_j, d_i_min_d_j, d_i_min_d_j_squared);
     //        auto d_i_mul_d_j         = cryptoContext->EvalMult(d_i, d_j);
     ps.ConstrainMultiplication(d_i, d_j, d_i_mul_d_j);
 

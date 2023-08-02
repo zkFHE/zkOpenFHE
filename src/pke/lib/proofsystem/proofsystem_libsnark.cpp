@@ -37,11 +37,15 @@ void LibsnarkProofSystem::SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertex
 }
 
 void LibsnarkProofSystem::ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext) {
-    LibsnarkProofMetadata out(ciphertext->GetElements().size());
-    out.modulus   = vector<size_t>(ciphertext->GetElements().size());
-    out.max_value = vector<vector<FieldT>>(ciphertext->GetElements().size());
+    const size_t num_polys = ciphertext->GetElements().size();
+    const size_t num_limbs = ciphertext->GetElements()[0].GetNumOfElements();
+    const size_t num_coefs = ciphertext->GetElements()[0].GetAllElements()[0].GetLength();
 
-    for (size_t j = 0; j < ciphertext->GetElements()[0].GetNumOfElements(); j++) {
+    LibsnarkProofMetadata out(num_polys);
+    out.max_value = vector<vector<FieldT>>(num_polys);
+    out.modulus   = vector<size_t>(num_limbs);
+
+    for (size_t j = 0; j < num_limbs; j++) {
         out.modulus[j] = ciphertext->GetElements()[0].GetElementAtIndex(j).GetModulus().ConvertToInt<unsigned long>();
     }
 
@@ -133,12 +137,10 @@ void LibsnarkProofSystem::constrain_submod_lazy(const LibsnarkProofMetadata& in1
         assert(modulus.size() == num_limbs);
         const FieldT curr_mod_fieldT = FieldT(modulus[j]);
 
-        cout << j << " < " << num_limbs << endl;
         out_max_value[j]    = in1.max_value[index_1][j] + curr_mod_fieldT;
         size_t out_bit_size = std::max(in1.get_bit_size(index_1, j), (size_t)ceil(log2(modulus[j]))) + 1ul;
         field_overflow[j]   = out_bit_size >= FieldT::num_bits;
         in2_lt_modulus[j]   = lt(in2.max_value[index_2][j], curr_mod_fieldT);
-        assert(modulus.size() == num_limbs);
 
         auto in2_ij = in2[index_2][j];
         //        auto in2_ij_curr_bit_size = in2.get_bit_size(index_2, j);
@@ -154,7 +156,6 @@ void LibsnarkProofSystem::constrain_submod_lazy(const LibsnarkProofMetadata& in1
             in2_ij           = g_mod.get_output();
             in2_ij_max_value = curr_mod_fieldT;
         }
-        assert(modulus.size() == num_limbs);
 
         if (field_overflow[j]) {
             // Eager witness generation, add modulus constraints
@@ -164,30 +165,14 @@ void LibsnarkProofSystem::constrain_submod_lazy(const LibsnarkProofMetadata& in1
             g.generate_r1cs_witness();
             out[index_out][j]           = g.get_output();
             out.max_value[index_out][j] = curr_mod_fieldT - 1;
-            assert(modulus.size() == num_limbs);
         }
         else {
             // Lazy branch, do not add modulus constraints, but track size of values for later
             out[index_out][j] = vector<pb_linear_combination<FieldT>>(in1[index_1][j].size());
             for (size_t k = 0; k < out[index_out][j].size(); ++k) {
-                assert(modulus.size() == num_limbs);
-                cout << "jk: " << std::to_string(j) << " " << std::to_string(k) << endl;
-                cout << "mod: " << modulus.size() << endl;
-                cout << "num_limbs: " << num_limbs << endl;
-                cout << (modulus.size() == num_limbs) << endl;
-                if (modulus.size() != num_limbs) {
-                    cout << "modulus.size() != num_limbs" << endl;
-                    throw std::logic_error("modulus.size() != num_limbs");
-                }
-                auto xx = in1.at(index_1);
-                auto x  = xx.at(j).at(k);
-                auto y  = curr_mod_fieldT;
-                auto z  = in2_ij.at(k);
-                out[index_out][j][k].assign(pb, x + y - z);
-                assert(modulus.size() == num_limbs);
+                out[index_out][j][k].assign(pb, in1[index_1][j][k] + curr_mod_fieldT - in2_ij[k]);
             }
             out.max_value[index_out][j] = out_max_value[j];
-            assert(modulus.size() == num_limbs);
         }
     }
 }
