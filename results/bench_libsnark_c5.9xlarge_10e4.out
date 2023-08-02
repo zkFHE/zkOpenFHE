@@ -1,0 +1,36 @@
+#OpenMP threads: 36
+Building constraint system....................................................................................................
+#variables:   10000
+#inputs:      1000
+#constraints: 10000
+--------------------------------------------------------------------
+Benchmark                          Time             CPU   Iterations
+--------------------------------------------------------------------
+BM_G16_BUILD/iterations:1 1521731821 ns   1520616726 ns            1
+* QAP number of variables: 10000
+* QAP pre degree: 10000
+* QAP degree: 12288
+* QAP number of input variables: 1000
+* G1 window: 11
+* G2 window: 8
+* G1 elements in PK: 41290
+* Non-zero G1 elements in PK: 32289
+* G2 elements in PK: 10002
+* Non-zero G2 elements in PK: 1001
+* PK size in bits: 8807204
+* G1 elements in VK: 1000
+* G2 elements in VK: 2
+* GT elements in VK: 1
+* VK size in bits: 320273
+BM_G16_SETUP              3641640142 ns   3641484216 ns            1
+* Elements of w skipped: 10000 (99.99%)
+* Elements of w processed with special addition: 1 (0.01%)
+* Elements of w remaining: 0 (0.00%)
+* Elements of w skipped: 9000 (100.00%)
+* Elements of w processed with special addition: 0 (0.00%)
+* Elements of w remaining: 0 (0.00%)
+* G1 elements in proof: 2
+* G2 elements in proof: 1
+* Proof size in bits: 1019
+BM_G16_PROVE              1637423599 ns   1637376253 ns            1
+BM_G16_VERIFY                 856709 ns       856709 ns          816
