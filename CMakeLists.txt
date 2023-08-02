@@ -603,6 +603,11 @@ set(USE_ASM ON)
 add_definitions(-DCURVE_${CURVE})
 add_subdirectory(third-party/libsnark)
 include_directories(third-party/libsnark third-party/libsnark/depends/libfqfft third-party/libsnark/depends/libff)
+message( STATUS "LIBSNARK: MULTICORE:     ${MULTICORE}")
+message( STATUS "LIBSNARK: WITH_PROCPS:   ${WITH_PROCPS}")
+message( STATUS "LIBSNARK: WITH_SUPERCOP: ${WITH_SUPERCOP}")
+message( STATUS "LIBSNARK: PERFORMANCE:   ${PERFORMANCE}")
+message( STATUS "LIBSNARK: USE_ASM:       ${USE_ASM}")
 
 if(WITH_NTL)
     ### Find gmp and ntl libraries. They must be installed by the user
