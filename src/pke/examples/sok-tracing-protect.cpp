@@ -63,6 +63,8 @@ int main() {
     parameters.SetSecurityLevel(SecurityLevel::HEStd_128_classic);
     parameters.SetMultiplicativeDepth(3);
     parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    parameters.SetKeySwitchTechnique(BV);
 
     CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
     cryptoContext->Enable(PKE);
@@ -104,14 +106,14 @@ int main() {
 
     auto d_i_min_d_j         = cryptoContext->EvalSub(d_i, d_j);
     auto d_i_min_d_j_squared = cryptoContext->EvalSquare(d_i_min_d_j);
-    auto d_i_mul_d_j         = cryptoContext->EvalMult(d_i, d_j);
+    auto d_i_mul_d_j         = cryptoContext->EvalMultNoRelin(d_i, d_j);
 
     auto c_dist = cryptoContext->EvalAdd(d_i_min_d_j_squared, d_i_mul_d_j);
     // TODO: unclear of where relinearization should happen from the description in the PROTECT paper
     c_dist = cryptoContext->Relinearize(c_dist);
 
     auto c_dist_squared_min_one = cryptoContext->EvalSub(c_dist, one);
-    auto c_prox                 = cryptoContext->EvalMult(c_dist, c_dist_squared_min_one);
+    auto c_prox                 = cryptoContext->EvalMultNoRelin(c_dist, c_dist_squared_min_one);
 
     auto c_out_blinded = cryptoContext->EvalMult(c_prox, client_random_blinding);
     auto c_out         = cryptoContext->EvalAdd(c_out_blinded, client_noiseflooding_0);
