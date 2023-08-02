@@ -12,6 +12,7 @@ using ppT = default_r1cs_ppzksnark_pp;
 typedef libff::Fr<ppT> FieldT;
 
 protoboard<FieldT> init(size_t num_variables, size_t num_input_variables, size_t num_constraints) {
+    libff::default_ec_pp::init_public_params();
     protoboard<FieldT> pb;
 
     pb_variable_array<FieldT> vars(num_variables, pb_variable<FieldT>());
