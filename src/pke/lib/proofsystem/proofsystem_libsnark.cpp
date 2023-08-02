@@ -615,8 +615,9 @@ void LibsnarkProofSystem::ConstrainSwitchModulus(
             n = n.Sub(sub_diff);
 
             tmp.evaluate(pb);
+#ifdef PROOFSYSTEM_CHECK_STRICT
             assert(pb.lc_val(tmp) == FieldT(n.template ConvertToInt<unsigned long>()));
-
+#endif
             ModGadget<FieldT> g_mod(pb, tmp, tmp_max_value, newModulus.template ConvertToInt<unsigned long>(), "",
                                     false);
             out_lc[i] = g_mod.out;
