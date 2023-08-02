@@ -647,7 +647,7 @@ public:
     vector<pb_linear_combination<FieldT>> get_output() {
         vector<pb_linear_combination<FieldT>> out(gadgets.size());
         for (size_t i = 0; i < gadgets.size(); ++i) {
-            out[i] = gadgets[i].out;
+            out[i] = pb_linear_combination<FieldT>(gadgets[i].out);
         }
         return out;
     }

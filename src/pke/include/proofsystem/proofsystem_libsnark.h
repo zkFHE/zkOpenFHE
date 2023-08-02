@@ -141,5 +141,10 @@ public:
 
     void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt2,
                                  Ciphertext<DCRTPoly>& ctxt_out);
+
+    template <typename DCRTPoly>
+    void ConstrainRotate(const Ciphertext<DCRTPoly>& ctxt_in, int rot_idx, Ciphertext<DCRTPoly>& ctxt_out);
+    void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Plaintext& ctxt2,
+                               Ciphertext<DCRTPoly>& ctxt_out);
 };
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H
