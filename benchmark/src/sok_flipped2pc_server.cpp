@@ -291,50 +291,49 @@ BENCHMARK_F(CustomFixture, Flipped2PC_Server_FHE_Teardown)(benchmark::State& sta
 }
 
 BENCHMARK_F(CustomFixture, Flipped2PC_ZKP)(benchmark::State& state) {
-    // Initialize proof system
+    for (auto _ : state) {
+        LibsnarkProofSystem ps(cryptoContext);
 
-    // Server.Encode, Server.Encrypt_pk
-    LibsnarkProofSystem ps(cryptoContext);
+        ps.ConstrainPublicInput(server_pos_i);
+        ps.ConstrainPublicInput(server_pos_j);
+        auto vars_out = ps.ConstrainPublicOutput(output);
 
-    ps.ConstrainPublicInput(server_pos_i);
-    ps.ConstrainPublicInput(server_pos_j);
-    auto vars_out = ps.ConstrainPublicOutput(output);
+        // Client.Eval
+        //        auto d_i = cryptoContext->EvalSub(client_pos_i, server_pos_i);
+        //        auto d_j = cryptoContext->EvalSub(client_pos_j, server_pos_j);
+        ps.ConstrainSubstraction(server_pos_i, client_pos_i, d_i);
+        ps.ConstrainSubstraction(server_pos_j, client_pos_j, d_j);
 
-    // Client.Eval
-    //        auto d_i = cryptoContext->EvalSub(client_pos_i, server_pos_i);
-    //        auto d_j = cryptoContext->EvalSub(client_pos_j, server_pos_j);
-    ps.ConstrainSubstraction(server_pos_i, client_pos_i, d_i);
-    ps.ConstrainSubstraction(server_pos_j, client_pos_j, d_j);
+        //        auto d_i_min_d_j         = cryptoContext->EvalSub(d_i, d_j);
+        ps.ConstrainSubstraction(d_i, d_j, d_i_min_d_j);
+        //        auto d_i_min_d_j_squared = cryptoContext->EvalSquare(d_i_min_d_j);
+        ps.ConstrainMultiplication(d_i_min_d_j, d_i_min_d_j, d_i_min_d_j_squared);
+        //        auto d_i_mul_d_j         = cryptoContext->EvalMult(d_i, d_j);
+        ps.ConstrainMultiplication(d_i, d_j, d_i_mul_d_j);
 
-    //        auto d_i_min_d_j         = cryptoContext->EvalSub(d_i, d_j);
-    ps.ConstrainSubstraction(d_i, d_j, d_i_min_d_j);
-    //        auto d_i_min_d_j_squared = cryptoContext->EvalSquare(d_i_min_d_j);
-    ps.ConstrainMultiplication(d_i_min_d_j, d_i_min_d_j, d_i_min_d_j_squared);
-    //        auto d_i_mul_d_j         = cryptoContext->EvalMult(d_i, d_j);
-    ps.ConstrainMultiplication(d_i, d_j, d_i_mul_d_j);
+        //        auto c_dist = cryptoContext->EvalAdd(d_i_min_d_j_squared, d_i_mul_d_j);
+        ps.ConstrainAddition(d_i_min_d_j_squared, d_i_mul_d_j, c_dist);
+        // Unclear of where relinearization should happen from the description in the PROTECT paper, we put it here as it makes the most sense
+        //        auto c_dist_relin = cryptoContext->Relinearize(c_dist);
+        ps.ConstrainRelin(c_dist, c_dist_relin);
 
-    //        auto c_dist = cryptoContext->EvalAdd(d_i_min_d_j_squared, d_i_mul_d_j);
-    ps.ConstrainAddition(d_i_min_d_j_squared, d_i_mul_d_j, c_dist);
-    // Unclear of where relinearization should happen from the description in the PROTECT paper, we put it here as it makes the most sense
-    //        auto c_dist_relin = cryptoContext->Relinearize(c_dist);
-    ps.ConstrainRelin(c_dist, c_dist_relin);
+        //        auto c_dist_squared_min_one = cryptoContext->EvalSub(c_dist_relin, one);
+        ps.ConstrainSubstraction(c_dist_relin, one, c_dist_squared_min_one);
+        //        auto c_prox                 = cryptoContext->EvalMult(c_dist, c_dist_squared_min_one);
+        ps.ConstrainMultiplication(c_dist_relin, c_dist_squared_min_one, c_prox);
 
-    //        auto c_dist_squared_min_one = cryptoContext->EvalSub(c_dist_relin, one);
-    ps.ConstrainSubstraction(c_dist_relin, one, c_dist_squared_min_one);
-    //        auto c_prox                 = cryptoContext->EvalMult(c_dist, c_dist_squared_min_one);
-    ps.ConstrainMultiplication(c_dist_relin, c_dist_squared_min_one, c_prox);
+        //        auto c_out_blinded = cryptoContext->EvalMult(c_prox, client_random_blinding);
+        ps.ConstrainMultiplication(c_prox, client_random_blinding, c_out_blinded);
+        //        output = cryptoContext->EvalAdd(c_out_blinded, client_noiseflooding_0);
+        //    ps.ConstrainMultiplication(c_out_blinded, client_noiseflooding_0, output);
 
-    //        auto c_out_blinded = cryptoContext->EvalMult(c_prox, client_random_blinding);
-    ps.ConstrainMultiplication(c_prox, client_random_blinding, c_out_blinded);
-    //        output = cryptoContext->EvalAdd(c_out_blinded, client_noiseflooding_0);
-    //    ps.ConstrainMultiplication(c_out_blinded, client_noiseflooding_0, output);
+        ps.FinalizeOutputConstraints(output, *vars_out);
 
-    ps.FinalizeOutputConstraints(output, *vars_out);
-
-    auto pb = ps.pb;
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:  " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+        auto pb = ps.pb;
+        cout << "#inputs:      " << pb.num_inputs() << endl;
+        cout << "#variables:  " << pb.num_variables() << endl;
+        cout << "#constraints: " << pb.num_constraints() << endl;
+    }
 }
 
 /*BENCHMARK_F(CustomFixture, Flipped2PC_Server_ZKP_Teardown)(benchmark::State& state) {
