@@ -1,0 +1,25 @@
+Parameters : logN=13, T=4295294977, logT=32, logQ=163, sigma = 3.200000
+number of lines: 131
+File HG01879 with 8192 SNP entries
+Expected disease susceptibility is: 0.29716968248352765
+Packing into 1 Ciphertext
+goos: linux
+goarch: amd64
+pkg: github.com/ldsec/vche/examples/DiseaseSusceptibilityPacked/baseline
+cpu: Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz
+BenchmarkDiseaseSusceptibility/BFV/Encode-36         	    3129	    377878 ns/op
+BenchmarkDiseaseSusceptibility/BFV/Encrypt-36        	     219	   5430292 ns/op
+BenchmarkDiseaseSusceptibility/BFV/Communication/Client->SP-36         	1000000000	         0.0000003 ns/op
+BenchmarkDiseaseSusceptibility/BFV/Eval-36                             	      19	  58793744 ns/op
+BenchmarkDiseaseSusceptibility/BFV/Communication/SP->Client-36         	1000000000	         1.000 BFV-ctxt	    393460 bytes
+BenchmarkDiseaseSusceptibility/BFV/Decrypt-36                          	    1152	   1039541 ns/op
+BenchmarkDiseaseSusceptibility/BFV/Decode-36                           	    3513	    338490 ns/op
+============================================
+Disease Susceptibility Results: Cancer
+============================================
+
+Disease susceptibility is: 0.28967687788612134
+Error -0.007492804597406311
+Relative error -2.521389306872394
+PASS
+ok  	github.com/ldsec/vche/examples/DiseaseSusceptibilityPacked/baseline	6.794s
