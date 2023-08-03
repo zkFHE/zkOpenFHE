@@ -211,8 +211,12 @@ int main() {
     //    ps.ConstrainMultiplication(c_out_blinded, client_noiseflooding_0, output);
     print(ps);
 
+    cout << "== Done with main circuit, finalizing outpu constraints and eagerly mod-reducing outstanding constraints ===" << endl;
     ps.FinalizeOutputConstraints(output, *vars_out);
 
     cout << "==============" << endl;
     print(ps);
+    std::cout << std::flush;
+
+    return 0;
 }
