@@ -1,0 +1,144 @@
+nohup: ignoring input
+2023-08-03T21:40:01+00:00
+Running ./bin/benchmark/sok-outsourcing
+Run on (36 X 3000 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x18)
+  L1 Instruction 32 KiB (x18)
+  L2 Unified 1024 KiB (x18)
+  L3 Unified 25344 KiB (x1)
+Load Average: 0.02, 0.04, 0.01
+N =    8192
+logT = 33
+prod := client_in * server_in
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+N =    8192
+logT = 33
+prod := client_in * server_in
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+-------------------------------------------------------------------------------------
+Benchmark                                           Time             CPU   Iterations
+-------------------------------------------------------------------------------------
+CustomFixture/Outsourcing_FHE_Client_Setup  430431732 ns    430418915 ns            3
+N =    8192
+logT = 33
+prod := client_in * server_in
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+N =    8192
+logT = 33
+prod := client_in * server_in
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+N =    8192
+logT = 33
+prod := client_in * server_in
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+CustomFixture/Outsourcing_FHE_Client_Eval    13848423 ns     13848175 ns           51
+N =    8192
+logT = 33
+prod := client_in * server_in
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+N =    8192
+logT = 33
+prod := client_in * server_in
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+N =    8192
+logT = 33
+prod := client_in * server_in
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+CustomFixture/Outsourcing_FHE_Server_Eval    35439158 ns     35437935 ns           20
