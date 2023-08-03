@@ -1,0 +1,49 @@
+nohup: ignoring input
+N =    1024
+logT = 33
+prod := client_in * server_in
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+prod := client_in * server_in
+#inputs:      24576
+#variables:  18226732
+#constraints: 18616876
+
+num_features = 512 = 2^9
+ag_1 := rot(prod, 2^1) + ag_0
+ag_2 := rot(prod, 2^2) + ag_1
+ag_3 := rot(prod, 2^3) + ag_2
+ag_4 := rot(prod, 2^4) + ag_3
+ag_5 := rot(prod, 2^5) + ag_4
+ag_6 := rot(prod, 2^6) + ag_5
+ag_7 := rot(prod, 2^7) + ag_6
+ag_8 := rot(prod, 2^8) + ag_7
+#inputs:      24576
+#variables:  167014071
+#constraints: 170721975
+
+approximation_degree = 8 = 2^3
+sg_1 := relin(sg_0^2)
+sg_2 := relin(sg_1^2)
+sg_3 := relin(sg_2^2)
+#inputs:      24576
+#variables:  223541998
+#constraints: 228500182
+
+== Done with main circuit, finalizing output constraints and eagerly mod-reducing outstanding constraints ===
+==============
+#inputs:      24576
+#variables:  224378606
+#constraints: 229369558
+
