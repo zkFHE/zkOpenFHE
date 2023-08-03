@@ -536,24 +536,25 @@ void LibsnarkProofSystem::ConstrainSquare(const Ciphertext<DCRTPoly>& ctxt, Ciph
 }
 
 std::shared_ptr<LibsnarkProofMetadata> LibsnarkProofSystem::ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext) {
-    LibsnarkProofMetadata out(ciphertext->GetElements().size());
-    out.modulus   = vector<size_t>(ciphertext->GetElements().size());
-    out.max_value = vector<vector<FieldT>>(ciphertext->GetElements().size());
+    const size_t num_poly  = ciphertext->GetElements().size();
+    const size_t num_limbs = ciphertext->GetElements()[0].GetNumOfElements();
+    LibsnarkProofMetadata out(num_poly);
+    out.max_value = vector<vector<FieldT>>(num_poly);
+    out.modulus   = vector<size_t>(num_limbs);
 
-    for (size_t j = 0; j < ciphertext->GetElements()[0].GetNumOfElements(); j++) {
+    for (size_t j = 0; j < num_limbs; j++) {
         out.modulus[j] = ciphertext->GetElements()[0].GetElementAtIndex(j).GetModulus().ConvertToInt<unsigned long>();
     }
 
-    for (size_t i = 0; i < ciphertext->GetElements().size(); i++) {
+    for (size_t i = 0; i < num_poly; i++) {
         const auto c_i   = ciphertext->GetElements()[i];
-        out[i]           = vector<vector<pb_linear_combination<FieldT>>>(c_i.GetNumOfElements());
-        out.max_value[i] = vector<FieldT>(c_i.GetNumOfElements());
-        for (size_t j = 0; j < c_i.GetNumOfElements(); j++) {
+        out[i]           = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
+        out.max_value[i] = vector<FieldT>(num_limbs);
+        for (size_t j = 0; j < num_limbs; j++) {
             const auto c_ij     = c_i.GetElementAtIndex(j);
             const auto& v_ij    = c_ij.GetValues();
             out[i][j]           = vector<pb_linear_combination<FieldT>>(v_ij.GetLength());
             out.max_value[i][j] = FieldT(c_ij.GetModulus().ConvertToInt<size_t>()) - 1;
-
             for (size_t k = 0; k < v_ij.GetLength(); k++) {
                 pb_variable<FieldT> tmp;
                 tmp.allocate(pb, ciphertext->SerializedObjectName() + "[" + std::to_string(i) + "][" +
