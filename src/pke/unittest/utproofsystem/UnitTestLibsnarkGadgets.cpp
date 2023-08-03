@@ -315,7 +315,7 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
     auto in_max_value = in_metadata.max_value[0][0];
     vector<pb_linear_combination<FieldT>> out_lc;
     FieldT out_max_value;
-    for (int i = 0; i < in_0.GetLength(); i++) {
+    for (size_t i = 0; i < in_0.GetLength(); i++) {
         ps.pb.lc_val(in_metadata[0][0][i]) = FieldT(in_0[i].template ConvertToInt<unsigned long>());
     }
     ps.ConstrainSwitchModulus(newModulus, newRootOfunity, 0, 0, in_0, out_0, in_lc, in_max_value, out_lc,

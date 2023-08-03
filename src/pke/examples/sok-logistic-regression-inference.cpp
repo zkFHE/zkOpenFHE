@@ -55,7 +55,7 @@ int main() {
     const size_t num_features      = 512;
     const size_t log_num_features  = ceil(log2(num_features));
     vector<int> rotation_indices;
-    for (int i = 0; i < log_num_features; i++) {
+    for (size_t i = 0; i < log_num_features; i++) {
         rotation_indices.push_back(1 << i);
     }
     const size_t approximation_degree     = 8;
