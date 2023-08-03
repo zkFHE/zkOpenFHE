@@ -82,9 +82,12 @@ int main() {
 
     Plaintext one;
 
-    usint ptm              = 65537;
-    usint depth            = 3;
-    const int max_position = 100;
+    usint ptm                    = 65537;
+    usint depth                  = 3;
+    const int max_position       = 100;
+    size_t total_num_inputs      = 0;
+    size_t total_num_variables   = 0;
+    size_t total_num_constraints = 0;
 
     vector<int64_t> client_pos_i_vec, client_pos_j_vec, client_random_blinding_vec, server_pos_i_vec, server_pos_j_vec,
         zero_vec;
@@ -92,23 +95,26 @@ int main() {
     Ciphertext<DCRTPoly> server_pos_i, server_pos_j, d_i, d_j, d_i_min_d_j, d_i_min_d_j_squared, d_i_mul_d_j, c_dist,
         c_dist_relin, c_dist_squared_min_one, c_prox, c_out_blinded, output;
 
-    r1cs_constraint_system<FieldT>* constraint_system;
-
-    r1cs_gg_ppzksnark_verification_key<ppT>* verification_key;
-    r1cs_gg_ppzksnark_proof<ppT>* proof;
-    r1cs_primary_input<FieldT>* primary_input;
-
     ///
     CCParams<CryptoContextBGVRNS> parameters;
     parameters.SetPlaintextModulus(ptm);
     parameters.SetMultiplicativeDepth(depth);
     parameters.SetKeySwitchTechnique(BV);
     parameters.SetScalingTechnique(FIXEDMANUAL);
+    parameters.SetRingDim(1024);
+    parameters.SetSecurityLevel(SecurityLevel::HEStd_NotSet);
+    cout << "BGV.N=" << parameters.GetRingDim() << endl;
+    cout << "BGV.logT=" << GetMSB(parameters.GetPlaintextModulus()) << endl;
 
     cryptoContext = GenCryptoContext(parameters);
     cryptoContext->Enable(PKE);
     cryptoContext->Enable(KEYSWITCH);
     cryptoContext->Enable(LEVELEDSHE);
+    //    for (usint i = 0; i < ; i++)
+    //        cout << "BGV.logQ[" << i << "]=" << GetMSB(parameters.GetQ(i)) << endl;
+    //}
+
+    cout << "BGV.Q=" <<cryptoContext->GetModulus() << endl;
 
     keyPair = cryptoContext->KeyGen();
     cryptoContext->EvalMultKeyGen(keyPair.secretKey);
@@ -181,6 +187,10 @@ int main() {
     //        auto d_i_mul_d_j         = cryptoContext->EvalMult(d_i, d_j);
     ps.ConstrainMultiplication(d_i, d_j, d_i_mul_d_j);
     print(ps);
+
+    /// CHUNK
+
+    ///
 
     //        auto c_dist = cryptoContext->EvalAdd(d_i_min_d_j_squared, d_i_mul_d_j);
     ps.ConstrainAddition(d_i_min_d_j_squared, d_i_mul_d_j, c_dist);
