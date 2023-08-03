@@ -1662,8 +1662,6 @@ void LibsnarkProofSystem::ConstrainRotate(const Ciphertext<DCRTPoly>& ciphertext
     algo->KeySwitchInPlace(result, evalKeyIterator->second);
     ConstrainKeySwitch(old, evalKeyIterator->second, result);
 
-    std::vector<Element>& rcv = result->GetElements();
-
     //    rcv[0] = rcv[0].AutomorphismTransform(i, vec);
     //    rcv[1] = rcv[1].AutomorphismTransform(i, vec);
     auto precomp = vec;
@@ -1674,7 +1672,6 @@ void LibsnarkProofSystem::ConstrainRotate(const Ciphertext<DCRTPoly>& ciphertext
                 out[i][j][k] = out[i][j][precomp[k]];
             }
         }
-        rcv[i] = rcv[i].AutomorphismTransform(i, vec);
     }
 
     SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
