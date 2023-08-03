@@ -63,6 +63,8 @@ public:
     void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                            Ciphertext<DCRTPoly>& ctxt_out) override;
 
+    void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt, const Plaintext& ptxt, Ciphertext<DCRTPoly>& ctxt_out);
+
     void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                Ciphertext<DCRTPoly>& ctxt_out) override;
 
@@ -70,6 +72,9 @@ public:
                                  Ciphertext<DCRTPoly>& ctxt_out) override;
 
     void ConstrainSquare(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
+
+    template <typename DCRTPoly>
+    void ConstrainRescale(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
 
     template <typename VecType2>
     void ConstrainSetFormat(Format format, const VecType2& in, const VecType2& out,
@@ -144,8 +149,12 @@ public:
                                  Ciphertext<DCRTPoly>& ctxt_out);
 
     template <typename DCRTPoly>
-    void ConstrainRotate(const Ciphertext<DCRTPoly>& ctxt_in, int rot_idx, Ciphertext<DCRTPoly>& ctxt_out);
+    void ConstrainRotate(const Ciphertext<DCRTPoly>& ciphertext, int rot_idx, Ciphertext<DCRTPoly>& ctxt_out);
     void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt,
                                Ciphertext<DCRTPoly>& ctxt_out);
+
+    template <typename DCRTPoly>
+    void ConstrainKeySwitch(const Ciphertext<DCRTPoly>& ctxt_i, const EvalKey<DCRTPoly>& evalKey,
+                            Ciphertext<DCRTPoly>& ctxt_out);
 };
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H
