@@ -40,7 +40,6 @@ void LibsnarkProofSystem::SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertex
 void LibsnarkProofSystem::ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext) {
     const size_t num_polys = ciphertext->GetElements().size();
     const size_t num_limbs = ciphertext->GetElements()[0].GetNumOfElements();
-    const size_t num_coefs = ciphertext->GetElements()[0].GetAllElements()[0].GetLength();
 
     LibsnarkProofMetadata out(num_polys);
     out.max_value = vector<vector<FieldT>>(num_polys);
@@ -537,35 +536,35 @@ void LibsnarkProofSystem::ConstrainSquare(const Ciphertext<DCRTPoly>& ctxt, Ciph
 }
 
 std::shared_ptr<LibsnarkProofMetadata> LibsnarkProofSystem::ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext) {
-    auto out       = std::make_shared<LibsnarkProofMetadata>(ciphertext->GetElements().size());
-    out->modulus   = vector<size_t>(ciphertext->GetElements().size());
-    out->max_value = vector<vector<FieldT>>(ciphertext->GetElements().size());
+    LibsnarkProofMetadata out(ciphertext->GetElements().size());
+    out.modulus   = vector<size_t>(ciphertext->GetElements().size());
+    out.max_value = vector<vector<FieldT>>(ciphertext->GetElements().size());
 
     for (size_t j = 0; j < ciphertext->GetElements()[0].GetNumOfElements(); j++) {
-        out->modulus[j] = ciphertext->GetElements()[0].GetElementAtIndex(j).GetModulus().ConvertToInt<unsigned long>();
+        out.modulus[j] = ciphertext->GetElements()[0].GetElementAtIndex(j).GetModulus().ConvertToInt<unsigned long>();
     }
 
     for (size_t i = 0; i < ciphertext->GetElements().size(); i++) {
-        const auto c_i     = ciphertext->GetElements()[i];
-        out->operator[](i) = vector<vector<pb_linear_combination<FieldT>>>(c_i.GetNumOfElements());
-        out->max_value[i]  = vector<FieldT>(c_i.GetNumOfElements());
+        const auto c_i   = ciphertext->GetElements()[i];
+        out[i]           = vector<vector<pb_linear_combination<FieldT>>>(c_i.GetNumOfElements());
+        out.max_value[i] = vector<FieldT>(c_i.GetNumOfElements());
         for (size_t j = 0; j < c_i.GetNumOfElements(); j++) {
-            const auto c_ij       = c_i.GetElementAtIndex(j);
-            const auto& v_ij      = c_ij.GetValues();
-            out->operator[](i)[j] = vector<pb_linear_combination<FieldT>>(v_ij.GetLength());
-            out->max_value[i][j]  = FieldT(c_ij.GetModulus().ConvertToInt<size_t>()) - 1;
+            const auto c_ij     = c_i.GetElementAtIndex(j);
+            const auto& v_ij    = c_ij.GetValues();
+            out[i][j]           = vector<pb_linear_combination<FieldT>>(v_ij.GetLength());
+            out.max_value[i][j] = FieldT(c_ij.GetModulus().ConvertToInt<size_t>()) - 1;
 
             for (size_t k = 0; k < v_ij.GetLength(); k++) {
                 pb_variable<FieldT> tmp;
                 tmp.allocate(pb, ciphertext->SerializedObjectName() + "[" + std::to_string(i) + "][" +
                                      std::to_string(j) + "][" + std::to_string(k) + "] (output)");
-                out->operator[](i)[j][k] = pb_linear_combination<FieldT>(tmp);
+                out[i][j][k] = pb_linear_combination<FieldT>(tmp);
             }
         }
     }
 
-    pb.set_input_sizes(pb.num_inputs() + (out->size() * out->operator[](0).size() * out->operator[](0)[0].size()));
-    return out;
+    pb.set_input_sizes(pb.num_inputs() + (out.size() * out[0].size() * out[0][0].size()));
+    return std::make_shared<LibsnarkProofMetadata>(out);
 }
 
 void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkProofMetadata& out_vars) {
@@ -1552,49 +1551,49 @@ template <typename DCRTPoly>
 void LibsnarkProofSystem::ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext, Ciphertext<DCRTPoly>& out) {
     assert(!!ciphertext);
     assert(!!out);
-    assert(ciphertext->GetElements().size() == 3);  // We don't support higher-order relin
 
-    const LibsnarkProofMetadata in_metadata = *(GetProofMetadata(ciphertext));
+    const LibsnarkProofMetadata in = *(GetProofMetadata(ciphertext));
+    const size_t num_poly          = ciphertext->GetElements().size();
+    const size_t num_limbs         = ciphertext->GetElements()[0].GetNumOfElements();
+    assert(num_poly == 3);  // We don't support higher-order relin
+    assert(in.size() == num_poly);
+    assert(in[0].size() == num_limbs);
+    assert(out->GetElements()[0].GetNumOfElements() == num_limbs);
+
     LibsnarkProofMetadata out_metadata(2);
 
     const auto evalKeyVec = ciphertext->GetCryptoContext()->GetEvalMultKeyVector(ciphertext->GetKeyTag());
     assert(evalKeyVec.size() >= (ciphertext->GetElements().size() - 2));
 
-    auto cv = ciphertext->GetElements();
+    const auto cv = ciphertext->GetElements();
     for (auto& c : cv) {
         assert(c.GetFormat() == Format::EVALUATION);  // Should always hold for BGV, no need to constrain
-
         // c.SetFormat(Format::EVALUATION);
     }
 
     auto algo = ciphertext->GetCryptoContext()->GetScheme();
 
     out_metadata           = LibsnarkProofMetadata(2);
-    out_metadata[0]        = in_metadata[0];
-    out_metadata[1]        = in_metadata[1];
-    out_metadata.max_value = {in_metadata.max_value[0], in_metadata.max_value[1]};
-    out_metadata.modulus   = in_metadata.modulus;
+    out_metadata[0]        = in[0];
+    out_metadata[1]        = in[1];
+    out_metadata.max_value = {in.max_value[0], in.max_value[1]};
+    out_metadata.modulus   = in.modulus;
 
-    for (size_t j = 2; j < cv.size(); j++) {
+    for (size_t j = 2; j < num_poly; j++) {
         //        auto ab      = algo->KeySwitchCore(cv[j], evalKeyVec[j - 2]);
         auto evalKey = evalKeyVec[j - 2];
 
-        ///
         const auto cryptoParamsBase = evalKey->GetCryptoParameters();
         std::shared_ptr<std::vector<DCRTPoly>> digits =
             KeySwitchBV().EvalKeySwitchPrecomputeCore(cv[j], cryptoParamsBase);
-        std::shared_ptr<std::vector<DCRTPoly>> result =
-            KeySwitchBV().EvalFastKeySwitchCore(digits, evalKey, cv[j].GetParams());
-        ///
 
-        //        const std::shared_ptr<typename DCRTPoly::Params> cryptoParamsBase = evalKey->GetCryptoParameters();
         vector<vector<vector<pb_linear_combination<FieldT>>>> tmp_lc;
         vector<vector<FieldT>> tmp_max_value;
-        //        std::shared_ptr<vector<DCRTPoly>> nil = nullptr;
+        ConstrainKeySwitchPrecomputeCore(cv[j], evalKey->GetCryptoParameters(), digits, in[j], in.max_value[j], tmp_lc,
+                                         tmp_max_value);
 
-        ConstrainKeySwitchPrecomputeCore(cv[j], evalKey->GetCryptoParameters(), digits, in_metadata[j],
-                                         in_metadata.max_value[j], tmp_lc, tmp_max_value);
-
+        std::shared_ptr<std::vector<DCRTPoly>> result =
+            KeySwitchBV().EvalFastKeySwitchCore(digits, evalKey, cv[j].GetParams());
         vector<vector<vector<pb_linear_combination<FieldT>>>> tmp2_lc;
         vector<vector<FieldT>> tmp2_max_value;
         ConstrainFastKeySwitchCore(digits, evalKey, cv[j].GetParams(), result, tmp_lc, tmp_max_value, tmp2_lc,
@@ -1604,11 +1603,10 @@ void LibsnarkProofSystem::ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext,
         //        cv[1] += (*ab)[1];
         LibsnarkProofMetadata tmp_metadata(tmp2_lc);
         tmp_metadata.max_value = tmp2_max_value;
-        tmp_metadata.modulus   = in_metadata.modulus;
+        tmp_metadata.modulus   = in.modulus;
         constrain_addmod_lazy(out_metadata, 0, tmp_metadata, 0, out_metadata, 0);
         constrain_addmod_lazy(out_metadata, 1, tmp_metadata, 1, out_metadata, 1);
     }
-    cv.resize(2);
 
     SetProofMetadata(out, std::make_shared<LibsnarkProofMetadata>(out_metadata));
 }

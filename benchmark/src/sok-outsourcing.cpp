@@ -136,14 +136,15 @@ public:
 
         // Server.Eval
         // Product
-        auto prod = cryptoContext->EvalMultNoRelin(client_in_1, client_in_2);
+        auto prod    = cryptoContext->EvalMultNoRelin(client_in_1, client_in_2);
+        auto relined = cryptoContext->Relinearize(prod);
         cout << "prod := client_in * server_in" << endl;
 
         // Aggregate to get inner product
         rots = vector<Ciphertext<DCRTPoly>>(1 + log_num_features);  // rots[i] == rotate(rots[i-1], 2^i), rots[0] = prod
         aggs = vector<Ciphertext<DCRTPoly>>(1 + log_num_features);  // aggs[i] == rots[i-1] + rots[i]
-        rots[0] = prod;
-        aggs[0] = prod;
+        rots[0] = relined;
+        aggs[0] = relined;
         cout << "num_features = " << num_features << " = 2^" << log_num_features << endl;
         for (size_t i = 1; i < log_num_features; i++) {
             int rot_amt = 1 << (i - 1);
@@ -196,13 +197,14 @@ BENCHMARK_F(CustomFixture, Outsourcing_FHE_Client_Eval)(benchmark::State& state)
 BENCHMARK_F(CustomFixture, Outsourcing_FHE_Server_Eval)(benchmark::State& state) {
     // BENCH: eval
     for (auto _ : state) {
-        auto prod = cryptoContext->EvalMultNoRelin(client_in_1, client_in_2);
+        auto prod    = cryptoContext->EvalMultNoRelin(client_in_1, client_in_2);
+        auto relined = cryptoContext->Relinearize(prod);
 
         // Aggregate to get inner product
         rots = vector<Ciphertext<DCRTPoly>>(1 + log_num_features);  // rots[i] == rotate(rots[i-1], 2^i), rots[0] = prod
         aggs = vector<Ciphertext<DCRTPoly>>(1 + log_num_features);  // aggs[i] == rots[i-1] + rots[i]
-        rots[0] = prod;
-        aggs[0] = prod;
+        rots[0] = relined;
+        aggs[0] = relined;
         for (size_t i = 1; i < log_num_features; i++) {
             int rot_amt = 1 << (i - 1);
             rots[i]     = cryptoContext->EvalRotate(aggs[i - 1], rot_amt);

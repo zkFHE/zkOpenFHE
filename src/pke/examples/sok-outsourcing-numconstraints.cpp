@@ -97,22 +97,23 @@ int main() {
     vector<int64_t> vec(cryptoContext->GetRingDimension());
 
     fill_pseudorandom(vec, 0, max_feature_value);
-    auto client_in = cryptoContext->Encrypt(keyPair.secretKey, cryptoContext->MakePackedPlaintext(vec));
+    auto client_in_1 = cryptoContext->Encrypt(keyPair.secretKey, cryptoContext->MakePackedPlaintext(vec));
 
     // Server.Encode, Server.Encrypt_sk
     fill_pseudorandom(vec, 0, max_feature_value);
-    const Plaintext server_in = cryptoContext->MakePackedPlaintext(vec);
+    auto client_in_2 = cryptoContext->Encrypt(keyPair.secretKey, cryptoContext->MakePackedPlaintext(vec));
 
     // Server.Eval
     // Product
-    auto prod = cryptoContext->EvalMult(client_in, server_in);
+    auto prod    = cryptoContext->EvalMultNoRelin(client_in_1, client_in_2);
+    auto relined = cryptoContext->Relinearize(prod);
     cout << "prod := client_in * server_in" << endl;
 
     // Aggregate to get inner product
     vector<Ciphertext<DCRTPoly>> rots(1 + log_num_features);  // rots[i] == rotate(rots[i-1], 2^i), rots[0] = prod
     vector<Ciphertext<DCRTPoly>> aggs(1 + log_num_features);  // aggs[i] == rots[i-1] + rots[i]
-    rots[0] = prod;
-    aggs[0] = prod;
+    rots[0] = relined;
+    aggs[0] = relined;
     cout << "num_features = " << num_features << " = 2^" << log_num_features << endl;
     for (size_t i = 1; i < log_num_features; i++) {
         int rot_amt = 1 << (i - 1);
@@ -128,7 +129,7 @@ int main() {
     sigs[0] = pows[0];
     cout << "approximation_degree = " << approximation_degree << " = 2^" << log_approximation_degree << endl;
     for (size_t i = 1; i <= log_approximation_degree; i++) {
-        pows[i] = cryptoContext->EvalSquare(sigs[i - 1]);
+        pows[i] = cryptoContext->EvalMultNoRelin(sigs[i - 1], sigs[i - 1]);
         sigs[i] = cryptoContext->Relinearize(pows[i]);
         cout << "sg_" << i << " := relin(sg_" << i - 1 << "^2)" << endl;
     }
@@ -140,12 +141,14 @@ int main() {
 
     // Do it all again with the ZKP
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(client_in);
+    ps.ConstrainPublicInput(client_in_1);
+    ps.ConstrainPublicInput(client_in_2);
     auto vars_out = *ps.ConstrainPublicOutput(out);
 
     // Product
     //    auto prod = cryptoContext->EvalMult(client_in, server_in);
-    ps.ConstrainMultiplication(client_in, server_in, prod);
+    ps.ConstrainMultiplication(client_in_1, client_in_2, prod);
+    ps.ConstrainRelin(prod, relined);
     cout << "prod := client_in * server_in" << endl;
     print(ps);
 
