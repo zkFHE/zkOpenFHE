@@ -188,10 +188,6 @@ int main() {
     ps.ConstrainMultiplication(d_i, d_j, d_i_mul_d_j);
     print(ps);
 
-    /// CHUNK
-
-    ///
-
     //        auto c_dist = cryptoContext->EvalAdd(d_i_min_d_j_squared, d_i_mul_d_j);
     ps.ConstrainAddition(d_i_min_d_j_squared, d_i_mul_d_j, c_dist);
     // Unclear of where relinearization should happen from the description in the PROTECT paper, we put it here as it makes the most sense
@@ -211,8 +207,12 @@ int main() {
     //    ps.ConstrainMultiplication(c_out_blinded, client_noiseflooding_0, output);
     print(ps);
 
+    cout << "== Done with main circuit, finalizing output constraints and eagerly mod-reducing outstanding constraints ===" << endl;
     ps.FinalizeOutputConstraints(output, *vars_out);
 
     cout << "==============" << endl;
     print(ps);
+    std::cout << std::flush;
+
+    return 0;
 }

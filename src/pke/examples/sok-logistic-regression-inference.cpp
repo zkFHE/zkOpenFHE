@@ -117,7 +117,7 @@ int main() {
     sigs[0] = pows[0];
     cout << "approximation_degree = " << approximation_degree << " = 2^" << log_approximation_degree << endl;
     for (size_t i = 1; i <= log_approximation_degree; i++) {
-        pows[i] = cryptoContext->EvalSquare(sigs[i - 1]);
+        pows[i] = cryptoContext->EvalMultNoRelin(sigs[i - 1], sigs[i - 1]);
         sigs[i] = cryptoContext->Relinearize(pows[i]);
         cout << "sg_" << i << " := relin(sg_" << i - 1 << "^2)" << endl;
     }
