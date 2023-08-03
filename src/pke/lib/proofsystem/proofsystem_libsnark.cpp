@@ -1670,7 +1670,7 @@ void LibsnarkProofSystem::ConstrainRotate(const Ciphertext<DCRTPoly>& ciphertext
     LibsnarkProofMetadata out(in);
     for (size_t i = 0; i < out.size(); i++) {
         for (size_t j = 0; j < out[0].size(); ++j) {
-            for (size_t k = 0; k < out[0][0].size(); ++j) {
+            for (size_t k = 0; k < out[0][0].size(); ++k) {
                 out[i][j][k] = out[i][j][precomp[k]];
             }
         }
