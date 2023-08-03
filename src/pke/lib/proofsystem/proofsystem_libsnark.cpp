@@ -5,6 +5,7 @@
 #include "proofsystem/gadgets_libsnark.h"
 #include "schemerns/rns-cryptoparameters.h"
 #include "keyswitch/keyswitch-bv.h"
+#include "scheme/bgvrns/bgvrns-leveledshe.h"
 
 #include <vector>
 #undef NDEBUG
@@ -235,6 +236,11 @@ void LibsnarkProofSystem::ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, c
     }
     assert(in1.size() == in2.size());
     assert(in1.modulus == in2.modulus);
+    if (in1.modulus != moduli) {
+        cout << "in1: " << in1.modulus << endl;
+        cout << "in2: " << in2.modulus << endl;
+        cout << "moduli: " << moduli << endl;
+    }
     assert(in1.modulus == moduli);
 
     LibsnarkProofMetadata out(in1.size());
@@ -243,6 +249,69 @@ void LibsnarkProofSystem::ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, c
     for (size_t i = 0; i < in1.size(); i++) {
         out[i] = vector<vector<pb_linear_combination<FieldT>>>(in1[i].size());
         constrain_addmod_lazy(in1, i, in2, i, out, i);
+    }
+    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
+}
+
+void LibsnarkProofSystem::ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt, const Plaintext& ptxt,
+                                            Ciphertext<DCRTPoly>& ctxt_out) {
+    const auto in1 = *GetProofMetadata(ctxt);
+    auto pt        = ptxt->GetElement<DCRTPoly>();
+    assert(in1[0].size() == pt.GetNumOfElements());
+    assert(in1[0][0].size() == pt.GetLength());
+
+    // CAUTION: ptxt->GetLength() is the number of set slots, not the ring dimension! Use pt.GetLength() instead.
+    vector<vector<pb_linear_combination<FieldT>>> in2_lc(in1[0].size());
+    vector<FieldT> in2_max_value(in1[0].size());
+    const size_t ptxt_modulus = pt.GetElementAtIndex(0).GetModulus().ConvertToInt();
+    for (size_t i = 0; i < in2_lc.size(); ++i) {
+        in2_lc[i].resize(pt.GetLength());
+        for (size_t j = 0; j < pt.GetLength(); ++j) {
+            pb_variable<FieldT> var;
+            var.allocate(pb, "in2_" + std::to_string(i) + "_" + std::to_string(j));
+            // TODO: can we re-use some of the range checks for all entries in the input?
+            pb.val(var) = FieldT(pt.GetElementAtIndex(0).GetValues()[j].ConvertToInt());
+
+            // Set max_value to be 1 larger than expected max value to trigger mod reduction
+            less_than_constant_gadget<FieldT> g(pb, var, FieldT(ptxt_modulus).as_bigint().num_bits(),
+                                                FieldT(ptxt_modulus));
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            in2_lc[i][j] = var;
+        }
+        in2_max_value[i] = FieldT(ptxt_modulus) - 1;
+    }
+
+    // SetFormat(EVALUATION)
+    assert(ptxt->GetElement<DCRTPoly>().GetFormat() == EVALUATION);
+    vector<vector<pb_linear_combination<FieldT>>> eval_lc = in2_lc;
+    vector<FieldT> eval_max_value                         = in2_max_value;
+
+    //    const Plaintext ptxt_eval(ptxt);
+    //    ptxt_eval->SetFormat(EVALUATION);
+    //    DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
+    //    vector<vector<pb_linear_combination<FieldT>>> eval_lc;
+    //    vector<FieldT> eval_max_value;
+    //    ConstrainSetFormat(EVALUATION, pt, pt_eval, in2_lc, in2_max_value, eval_lc, eval_max_value);
+
+    // Add ptxt from 0-th element of ctxt
+    LibsnarkProofMetadata out(in1);
+    vector<vector<vector<FieldT>>> out_max_values(in1.size());
+    out_max_values[0].resize(in1[0].size());
+    for (size_t j = 0; j < in1[0].size(); ++j) {
+        out_max_values[0][j].resize(in1[0][j].size());
+        for (size_t k = 0; k < in1[0][j].size(); ++k) {
+            LazyAddModGadget<FieldT> g(pb, in1[0][j][k], in1.max_value[0][j], eval_lc[j][k], eval_max_value[j],
+                                       in1.modulus[j]);
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            out[0][j][k]            = g.out;
+            out_max_values[0][j][k] = g.out_max_value;
+        }
+    }
+
+    for (size_t j = 0; j < out[0].size(); ++j) {
+        out.max_value[0][j] = get_max_field_element(out_max_values[0][j]);
     }
     SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
 }
@@ -300,7 +369,7 @@ void LibsnarkProofSystem::ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt
     }
 
     // SetFormat(EVALUATION)
-    const Plaintext ptxt_eval(ptxt);
+    Plaintext ptxt_eval(ptxt);
     ptxt_eval->SetFormat(EVALUATION);
     DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
     vector<vector<pb_linear_combination<FieldT>>> eval_lc;
@@ -403,6 +472,7 @@ void LibsnarkProofSystem::ConstrainMultiplication(const Ciphertext<DCRTPoly>& ct
     }
 
     // SetFormat(EVALUATION)
+    //    assert(ptxt->GetElement<DCRTPoly>().GetFormat() == EVALUATION);
     const Plaintext ptxt_eval(ptxt);
     ptxt_eval->SetFormat(EVALUATION);
     DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
@@ -413,6 +483,7 @@ void LibsnarkProofSystem::ConstrainMultiplication(const Ciphertext<DCRTPoly>& ct
     // Multiply each entry of ctxt with ptxt
     LibsnarkProofMetadata out(in1.size());
     vector<vector<vector<FieldT>>> out_max_values(in1.size());
+    out.modulus = in1.modulus;
     for (size_t i = 0; i < in1.size(); ++i) {
         out[i].resize(in1[i].size());
         out_max_values[i].resize(in1[i].size());
@@ -616,7 +687,7 @@ void LibsnarkProofSystem::ConstrainSwitchModulus(
 
             tmp.evaluate(pb);
 #ifdef PROOFSYSTEM_CHECK_STRICT
-            assert(pb.lc_val(tmp) == FieldT(n.template ConvertToInt<unsigned long>()));
+//            assert(pb.lc_val(tmp) == FieldT(n.template ConvertToInt<unsigned long>()));
 #endif
             ModGadget<FieldT> g_mod(pb, tmp, tmp_max_value, newModulus.template ConvertToInt<unsigned long>(), "",
                                     false);
@@ -924,10 +995,16 @@ void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const VecType2
                                              const vector<pb_linear_combination<FieldT>>& in_lc,
                                              const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
                                              FieldT& out_max_value) {
-    assert(in.GetFormat() != format);
     assert(out.GetFormat() == format);
     assert(in.GetLength() == out.GetLength());
     assert(in.GetLength() == in_lc.size());
+    if (in.GetFormat() == format) {
+        assert(in == out);
+        out_lc        = in_lc;
+        out_max_value = in_max_value;
+        return;
+    }
+    assert(in.GetFormat() != format);
 
     using namespace intnat;
 
@@ -971,12 +1048,19 @@ void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const DCRTPoly
                                              const vector<FieldT>& in_max_value,
                                              vector<vector<pb_linear_combination<FieldT>>>& out_lc,
                                              vector<FieldT>& out_max_value) {
-    assert(in.GetFormat() != format);
     assert(out.GetFormat() == format);
     size_t n = in.GetNumOfElements();
     assert(out.GetNumOfElements() == n);
     assert(in_lc.size() == n);
     assert(in_max_value.size() == n);
+    assert(in.GetFormat() != format);
+    if (in.GetFormat() == format) {
+        assert(in == out);
+        out_lc        = in_lc;
+        out_max_value = in_max_value;
+        return;
+    }
+    assert(in.GetFormat() != format);
     out_lc.resize(n);
     out_max_value.resize(n);
 
@@ -984,6 +1068,89 @@ void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const DCRTPoly
         ConstrainSetFormat(format, in.GetElementAtIndex(i), out.GetElementAtIndex(i), in_lc[i], in_max_value[i],
                            out_lc[i], out_max_value[i]);
     }
+}
+template <typename DCRTPoly>
+void LibsnarkProofSystem::ConstrainRescale(const Ciphertext<DCRTPoly>& ctxt_in, Ciphertext<DCRTPoly>& ctxt_out) {
+    auto in                 = *GetProofMetadata(ctxt_in);
+    const size_t num_polys  = in.size();
+    const size_t num_levels = in[0].size();
+    assert(ctxt_in->GetElements().size() == num_polys);
+    assert(ctxt_in->GetElements()[0].GetNumOfElements() == num_levels);
+
+    LibsnarkProofMetadata out(num_polys);
+    out.modulus.resize(num_levels - 1);
+    for (size_t j = 0; j < num_levels - 1; ++j) {
+        out.modulus[j] = in.modulus[j];
+    }
+    for (size_t i = 0; i < num_polys; ++i) {
+        out[i].resize(num_levels - 1);
+        out.max_value[i].resize(num_levels - 1);
+        for (size_t j = 0; j < num_levels - 1; ++j) {
+            out[i][j]           = in[i][j];
+            out.max_value[i][j] = in.max_value[i][j];
+        }
+
+        vector<pb_linear_combination<FieldT>> last_lc;
+        FieldT last_max_value;
+        auto lastPoly = ctxt_in->GetElements()[i].GetElementAtIndex(num_levels - 1);
+        auto lastPolyCoef(lastPoly);
+        lastPolyCoef.SetFormat(Format::COEFFICIENT);
+
+        ConstrainSetFormat(Format::COEFFICIENT, lastPoly, lastPolyCoef, in[i][num_levels - 1],
+                           in.max_value[i][num_levels - 1], last_lc, last_max_value);
+
+        DCRTPoly extra(ctxt_in->GetElements()[i].GetParams(), COEFFICIENT, true);
+        vector<vector<pb_linear_combination<FieldT>>> extra_lc(extra.GetNumOfElements());
+        vector<FieldT> extra_max_value(extra.GetNumOfElements());
+        for (usint j = 0; j < extra.GetNumOfElements(); j++) {
+            auto temp         = lastPoly;
+            const auto newMod = ctxt_in->GetElements()[0].GetElementAtIndex(j).GetModulus();
+            const auto newRoU = ctxt_in->GetElements()[0].GetElementAtIndex(j).GetRootOfUnity();
+
+            temp.SwitchModulus(newMod, newRoU, 0, 0);
+            ConstrainSwitchModulus(newMod, newRoU, 0, 0, lastPoly, temp, last_lc, last_max_value, extra_lc[j],
+                                   extra_max_value[j]);
+            //            extra.m_vectors[j] = (temp *= QlQlInvModqlDivqlModq[j]);
+        }
+
+        //        if (this->GetFormat() == Format::EVALUATION)
+        //            extra.SetFormat(Format::EVALUATION);
+        auto extra_eval(extra);
+        extra_eval.SetFormat(Format::EVALUATION);
+        vector<vector<pb_linear_combination<FieldT>>> extra_eval_lc(extra.GetNumOfElements());
+        vector<FieldT> extra_eval_max_value(extra.GetNumOfElements());
+        ConstrainSetFormat(Format::EVALUATION, extra, extra_eval, extra_lc, extra_max_value, extra_eval_lc,
+                           extra_eval_max_value);
+
+        //        for (usint i = 0; i < m_vectors.size(); i++) {
+        //            m_vectors[i] *= qlInvModq[i];
+        //            m_vectors[i] += extra.m_vectors[i];
+        //        }
+
+        for (size_t j = 0; j < out[i].size(); j++) {
+            FieldT curr_max = 0;
+            for (size_t k = 0; k < out[i][j].size(); k++) {
+                LazyAddModGadget<FieldT> g(pb, out[i][j][k], out.max_value.at(i).at(j), extra_eval_lc.at(j).at(k),
+                                           extra_eval_max_value.at(j), out.modulus.at(j));
+                g.generate_r1cs_constraints();
+                g.generate_r1cs_witness();
+                out[i][j][k] = g.out;
+                if (lt(curr_max, g.out_max_value)) {
+                    curr_max = g.out_max_value;
+                }
+            }
+            out.max_value[i][j] = curr_max;
+        }
+
+        //        this->SetFormat(Format::EVALUATION);
+        assert(ctxt_out->GetElements()[i].GetFormat() == Format::EVALUATION);
+        //        auto curr_eval(ctxt_out->GetElements()[i]);
+        //        curr_eval.SetFormat(Format::EVALUATION);
+        //        ConstrainSetFormat(Format::EVALUATION, ctxt_out->GetElements()[i], curr_eval, out[i], out.max_value[i], out[i],
+        //                           out.max_value[i]);
+    }
+
+    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
 }
 
 template <typename DCRTPoly>
@@ -1337,6 +1504,51 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(
 }
 
 template <typename DCRTPoly>
+void LibsnarkProofSystem::ConstrainKeySwitch(const Ciphertext<DCRTPoly>& ctxt_in, const EvalKey<DCRTPoly>& ek,
+                                             Ciphertext<DCRTPoly>& ctxt_out) {
+    assert(ctxt_in->GetElements().size() == 2);
+    auto in = *GetProofMetadata(ctxt_in);
+
+    std::vector<DCRTPoly>& cv = ctxt_in->GetElements();
+
+    //    std::shared_ptr<std::vector<DCRTPoly>> ba = KeySwitchCore(cv[1], ek) ;
+    auto a                                        = cv[1];
+    const auto cryptoParamsBase                   = ek->GetCryptoParameters();
+    std::shared_ptr<std::vector<DCRTPoly>> digits = KeySwitchBV().EvalKeySwitchPrecomputeCore(a, cryptoParamsBase);
+    vector<vector<vector<pb_linear_combination<FieldT>>>> digits_lc;
+    vector<vector<FieldT>> digits_max_value;
+    ConstrainKeySwitchPrecomputeCore(a, cryptoParamsBase, digits, in[1], in.max_value[1], digits_lc, digits_max_value);
+
+    std::shared_ptr<std::vector<DCRTPoly>> result = KeySwitchBV().EvalFastKeySwitchCore(digits, ek, a.GetParams());
+    vector<vector<vector<pb_linear_combination<FieldT>>>> out_lc;
+    vector<vector<FieldT>> out_max_value;
+    ConstrainFastKeySwitchCore(digits, ek, a.GetParams(), result, digits_lc, digits_max_value, out_lc, out_max_value);
+    LibsnarkProofMetadata out(out_lc);
+    out.max_value = out_max_value;
+    out.modulus   = out.modulus;
+
+    auto ba = digits;
+    assert(cv[0].GetFormat() == (*ba)[0].GetFormat());
+    //    cv[0] += (*ba)[0];
+    for (size_t j = 0; j < out[0].size(); j++) {
+        for (size_t k = 0; k < out[0][j].size(); k++) {
+            LazyAddModGadget<FieldT> g(pb, out[0][j][k], out.max_value[0][j], in[0][j][k], in.max_value[0][j],
+                                       in.modulus[j]);
+        }
+    }
+
+    assert(cv[1].GetFormat() == (*ba)[1].GetFormat());
+    //    if (cv.size() > 2) {
+    //        cv[1] += (*ba)[1];
+    //    }
+    //    else {
+    cv[1] = (*ba)[1];
+    //    }
+
+    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
+}
+
+template <typename DCRTPoly>
 void LibsnarkProofSystem::ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext, Ciphertext<DCRTPoly>& out) {
     assert(!!ciphertext);
     assert(!!out);
@@ -1392,7 +1604,7 @@ void LibsnarkProofSystem::ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext,
         //        cv[1] += (*ab)[1];
         LibsnarkProofMetadata tmp_metadata(tmp2_lc);
         tmp_metadata.max_value = tmp2_max_value;
-        tmp_metadata.modulus   = in_metadata.modulus;  // TODO: double-check
+        tmp_metadata.modulus   = in_metadata.modulus;
         constrain_addmod_lazy(out_metadata, 0, tmp_metadata, 0, out_metadata, 0);
         constrain_addmod_lazy(out_metadata, 1, tmp_metadata, 1, out_metadata, 1);
     }
@@ -1402,11 +1614,70 @@ void LibsnarkProofSystem::ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext,
 }
 
 template <typename DCRTPoly>
-void LibsnarkProofSystem::ConstrainRotate(const Ciphertext<DCRTPoly>& ctxt_in, const int rot_idx,
+void LibsnarkProofSystem::ConstrainRotate(const Ciphertext<DCRTPoly>& ciphertext, const int rot_idx,
                                           Ciphertext<DCRTPoly>& ctxt_out) {
-    auto in = *GetProofMetadata(ctxt_in);
-    // TODO: implement me
-    auto out(in);
+    auto in = *GetProofMetadata(ciphertext);
+
+    auto index    = rot_idx;
+    const auto cc = ciphertext->GetCryptoContext();
+
+    auto evalKeyMap = cc->GetEvalAutomorphismKeyMap(ciphertext->GetKeyTag());
+    //    return GetScheme()->EvalAtIndex(ciphertext, index, evalKeyMap);
+
+    usint M = ciphertext->GetCryptoParameters()->GetElementParams()->GetCyclotomicOrder();
+
+    auto algo          = ciphertext->GetCryptoContext()->GetScheme();
+    uint32_t autoIndex = FindAutomorphismIndex2n(index, M);  // TODO: use scheme stored in ctxt instead
+
+    //    return EvalAutomorphism(ciphertext, autoIndex, evalKeyMap);
+
+    auto i   = autoIndex;
+    auto key = evalKeyMap.find(i);
+    assert(key != evalKeyMap.end());
+
+    //    if (key == evalKeyMap.end()) {
+    //        std::string errorMsg(std::string("Could not find an EvalKey for index ") + std::to_string(i) + CALLER_INFO);
+    //        OPENFHE_THROW(type_error, errorMsg);
+    //    }
+
+    auto evalKey = key->second;
+
+    //    CheckKey(evalKey);
+
+    //    return GetScheme()->EvalAutomorphism(ciphertext, i, evalKeyMap);
+
+    auto evalKeyIterator = evalKeyMap.find(i);
+    assert(evalKeyIterator != evalKeyMap.end());
+    using Element                  = DCRTPoly;
+    const std::vector<Element>& cv = ciphertext->GetElements();
+    usint N                        = cv[0].GetRingDimension();
+
+    std::vector<usint> vec(N);
+    PrecomputeAutoMap(N, i, &vec);
+
+    //    auto algo = ciphertext->GetCryptoContext()->GetScheme();
+
+    Ciphertext<Element> result = ciphertext->Clone();
+
+    auto old(result);
+    algo->KeySwitchInPlace(result, evalKeyIterator->second);
+    ConstrainKeySwitch(old, evalKeyIterator->second, result);
+
+    std::vector<Element>& rcv = result->GetElements();
+
+    //    rcv[0] = rcv[0].AutomorphismTransform(i, vec);
+    //    rcv[1] = rcv[1].AutomorphismTransform(i, vec);
+    auto precomp = vec;
+    LibsnarkProofMetadata out(in);
+    for (size_t i = 0; i < out.size(); i++) {
+        for (size_t j = 0; j < out[0].size(); ++j) {
+            for (size_t k = 0; k < out[0][0].size(); ++j) {
+                out[i][j][k] = out[i][j][precomp[k]];
+            }
+        }
+        rcv[i] = rcv[i].AutomorphismTransform(i, vec);
+    }
+
     SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
 }
 

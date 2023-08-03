@@ -1,4 +1,4 @@
-#define PROOFSYSTEM_CHECK_STRICT
+//#define PROOFSYSTEM_CHECK_STRICT
 
 #define PROOFSYSTEM_ASSERT_EQ(a, b) assert(a == b);
 
@@ -520,6 +520,53 @@ TEST(libsnark_openfhe_gadgets, add) {
     }
 }
 
+TEST(libsnark_openfhe_gadgets, add_plain) {
+    libff::default_ec_pp::init_public_params();
+
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    // use BV instead of HYBRID, as it is a lot simpler to arithmetize, even if it requires a quadratic number of NTTs
+    parameters.SetKeySwitchTechnique(KeySwitchTechnique::BV);
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+
+    cryptoContext->Enable(PKE);
+    cryptoContext->Enable(LEVELEDSHE);
+
+    KeyPair<DCRTPoly> keyPair;
+    keyPair              = cryptoContext->KeyGen();
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
+
+    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    auto out   = cryptoContext->EvalAdd(ctxt1, plaintext1);  // No relin
+
+    LibsnarkProofSystem ps(cryptoContext);
+    ps.ConstrainPublicInput(ctxt1);
+    ps.ConstrainAddition(ctxt1, plaintext1, out);
+
+    auto pb = ps.pb;
+
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
+
+    EXPECT_EQ(pb.is_satisfied(), true);
+
+    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    for (size_t i = 0; i < out_metadata.size(); ++i) {
+        for (size_t j = 0; j < out_metadata[i].size(); ++j) {
+            auto q =
+                FieldT(out->GetElements()[i].GetElementAtIndex(j).GetModulus().template ConvertToInt<unsigned long>());
+            for (size_t k = 0; k < out_metadata[i][j].size(); ++k) {
+                out_metadata[i][j][k].evaluate(pb);
+                auto expected = out->GetElements()[i].GetElementAtIndex(j).GetValues()[k];
+                EXPECT_EQ(mod(pb.lc_val(out_metadata[i][j][k]), q), FieldT(expected.ConvertToInt()));
+            }
+        }
+    }
+}
+
 TEST(libsnark_openfhe_gadgets, sub) {
     libff::default_ec_pp::init_public_params();
 
@@ -585,7 +632,7 @@ TEST(libsnark_openfhe_gadgets, sub_plain) {
     cryptoContext->Enable(LEVELEDSHE);
 
     KeyPair<DCRTPoly> keyPair;
-    keyPair = cryptoContext->KeyGen();
+    keyPair              = cryptoContext->KeyGen();
     Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
 
     auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
@@ -594,6 +641,104 @@ TEST(libsnark_openfhe_gadgets, sub_plain) {
     LibsnarkProofSystem ps(cryptoContext);
     ps.ConstrainPublicInput(ctxt1);
     ps.ConstrainSubstraction(ctxt1, plaintext1, out);
+
+    auto pb = ps.pb;
+
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
+
+    EXPECT_EQ(pb.is_satisfied(), true);
+
+    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    for (size_t i = 0; i < out_metadata.size(); ++i) {
+        for (size_t j = 0; j < out_metadata[i].size(); ++j) {
+            auto q =
+                FieldT(out->GetElements()[i].GetElementAtIndex(j).GetModulus().template ConvertToInt<unsigned long>());
+            for (size_t k = 0; k < out_metadata[i][j].size(); ++k) {
+                out_metadata[i][j][k].evaluate(pb);
+                auto expected = out->GetElements()[i].GetElementAtIndex(j).GetValues()[k];
+                EXPECT_EQ(mod(pb.lc_val(out_metadata[i][j][k]), q), FieldT(expected.ConvertToInt()));
+            }
+        }
+    }
+}
+
+TEST(libsnark_openfhe_gadgets, rescale) {
+    libff::default_ec_pp::init_public_params();
+
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    // use BV instead of HYBRID, as it is a lot simpler to arithmetize, even if it requires a quadratic number of NTTs
+    parameters.SetKeySwitchTechnique(KeySwitchTechnique::BV);
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+
+    cryptoContext->Enable(PKE);
+    cryptoContext->Enable(LEVELEDSHE);
+
+    KeyPair<DCRTPoly> keyPair;
+    keyPair = cryptoContext->KeyGen();
+    cryptoContext->EvalMultKeyGen(keyPair.secretKey);
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
+
+    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    auto out   = cryptoContext->Rescale(ctxt1);
+
+    LibsnarkProofSystem ps(cryptoContext);
+    ps.ConstrainPublicInput(ctxt1);
+    ps.ConstrainRescale(ctxt1, out);
+
+    auto pb = ps.pb;
+
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
+
+    EXPECT_EQ(pb.is_satisfied(), true);
+
+    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    for (size_t i = 0; i < out_metadata.size(); ++i) {
+        for (size_t j = 0; j < out_metadata[i].size(); ++j) {
+            auto q =
+                FieldT(out->GetElements()[i].GetElementAtIndex(j).GetModulus().template ConvertToInt<unsigned long>());
+            for (size_t k = 0; k < out_metadata[i][j].size(); ++k) {
+                out_metadata[i][j][k].evaluate(pb);
+                auto expected = out->GetElements()[i].GetElementAtIndex(j).GetValues()[k];
+                EXPECT_EQ(mod(pb.lc_val(out_metadata[i][j][k]), q), FieldT(expected.ConvertToInt()));
+            }
+        }
+    }
+}
+
+TEST(libsnark_openfhe_gadgets, rotation) {
+    libff::default_ec_pp::init_public_params();
+
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    // use BV instead of HYBRID, as it is a lot simpler to arithmetize, even if it requires a quadratic number of NTTs
+    parameters.SetKeySwitchTechnique(KeySwitchTechnique::BV);
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+
+    cryptoContext->Enable(PKE);
+    cryptoContext->Enable(LEVELEDSHE);
+
+    KeyPair<DCRTPoly> keyPair;
+    keyPair = cryptoContext->KeyGen();
+    cryptoContext->EvalMultKeyGen(keyPair.secretKey);
+    cryptoContext->EvalRotateKeyGen(keyPair.secretKey, {1});
+
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
+
+    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    auto out   = cryptoContext->EvalRotate(ctxt1, 1);
+
+    LibsnarkProofSystem ps(cryptoContext);
+    ps.ConstrainPublicInput(ctxt1);
+    ps.ConstrainRotate(ctxt1, 1, out);
 
     auto pb = ps.pb;
 

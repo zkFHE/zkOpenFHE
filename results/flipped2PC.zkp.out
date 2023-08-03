@@ -1,0 +1,30 @@
+nohup: ignoring input
+BGV.N=1024
+BGV.logT=17
+BGV.Q=1531525307593818087096195826907752117167620600456957953
+#inputs:      24576
+#variables:  24576
+#constraints: 0
+
+#inputs:      24576
+#variables:  4308158
+#constraints: 4414654
+
+#inputs:      24576
+#variables:  4549822
+#constraints: 4668606
+
+#inputs:      24576
+#variables:  22137414
+#constraints: 22670933
+
+#inputs:      24576
+#variables:  24295589
+#constraints: 24894644
+
+#inputs:      24576
+#variables:  29427460
+#constraints: 30128915
+
+== Done with main circuit, finalizing outpu constraints and eagerly mod-reducing outstanding constraints ===
+Segmentation fault (core dumped)
