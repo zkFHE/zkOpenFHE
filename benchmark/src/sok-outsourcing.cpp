@@ -9,11 +9,8 @@
 #include "benchmark/benchmark.h"
 
 #include <iostream>
-#include <fstream>
-#include <limits>
 #include <iterator>
 #include <random>
-#include <cassert>
 
 using std::cout, std::endl;
 using namespace lbcrypto;
@@ -113,7 +110,7 @@ public:
         parameters.SetScalingTechnique(FIXEDMANUAL);
         parameters.SetKeySwitchTechnique(BV);
 
-        CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+        cryptoContext = GenCryptoContext(parameters);
         cryptoContext->Enable(PKE);
         cryptoContext->Enable(KEYSWITCH);
         cryptoContext->Enable(LEVELEDSHE);
@@ -122,7 +119,7 @@ public:
         cout << "logT = " << GetMSB(parameters.GetPlaintextModulus()) << endl;
 
         // Server.Keygen
-        KeyPair<DCRTPoly> keyPair = cryptoContext->KeyGen();
+        keyPair = cryptoContext->KeyGen();
         cryptoContext->EvalMultKeyGen(keyPair.secretKey);
         cryptoContext->EvalRotateKeyGen(keyPair.secretKey, rotation_indices);
 
