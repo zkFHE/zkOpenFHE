@@ -1,0 +1,15 @@
+2023-08-03T01:09:47+00:00
+Running ./bin/benchmark/sok_flipped2pc_server
+Run on (36 X 3000 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x18)
+  L1 Instruction 32 KiB (x18)
+  L2 Unified 1024 KiB (x18)
+  L3 Unified 25344 KiB (x1)
+Load Average: 0.01, 0.03, 0.00
+---------------------------------------------------------------------------------------
+Benchmark                                             Time             CPU   Iterations
+---------------------------------------------------------------------------------------
+CustomFixture/Flipped2PC_Server_FHE_Setup      42403279 ns     42402206 ns           17
+CustomFixture/Flipped2PC_Server_FHE_Eval       10381450 ns     10381201 ns           67
+CustomFixture/Flipped2PC_Server_FHE_Teardown    1506654 ns      1506618 ns          468
