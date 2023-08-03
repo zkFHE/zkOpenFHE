@@ -220,21 +220,27 @@ public:
 };
 
 BENCHMARK_F(CustomFixture, Flipped2PC_Server_FHE_Setup)(benchmark::State& state) {
-    // BENCH: keygen + (single) encryption
     for (auto _ : state) {
         // Server.Keygen
         KeyPair<DCRTPoly> keyPair = cryptoContext->KeyGen();
         cryptoContext->EvalMultKeyGen(keyPair.secretKey);
+    }
+}
 
+BENCHMARK_F(CustomFixture, Flipped2PC_Server_FHE_Eval)(benchmark::State& state) {
+    for (auto _ : state) {
         // Server.Encode, Server.Encrypt_sk
         auto server_pos_i =
             cryptoContext->Encrypt(keyPair.secretKey, cryptoContext->MakePackedPlaintext(server_pos_i_vec));
         auto server_pos_j =
             cryptoContext->Encrypt(keyPair.secretKey, cryptoContext->MakePackedPlaintext(server_pos_j_vec));
+        // Server.Decode
+        Plaintext result;
+        cryptoContext->Decrypt(keyPair.secretKey, output, &result);
     }
 }
 
-BENCHMARK_F(CustomFixture, Flipped2PC_Server_FHE_Eval)(benchmark::State& state) {
+BENCHMARK_F(CustomFixture, Flipped2PC_Client_FHE_Eval)(benchmark::State& state) {
     // BENCH: eval
     for (auto _ : state) {
         d_i = cryptoContext->EvalSub(server_pos_i, client_pos_i);
@@ -257,39 +263,7 @@ BENCHMARK_F(CustomFixture, Flipped2PC_Server_FHE_Eval)(benchmark::State& state) 
     }
 }
 
-/*BENCHMARK_F(CustomFixture, Flipped2PC_Server_ZKP_Setup)(benchmark::State& state) {
-    // BENCH: keygen + (double) encryption + ZKP setup
-    for (auto _ : state) {
-        // Server.Keygen
-        KeyPair<DCRTPoly> keyPair1 = cryptoContext->KeyGen();
-        cryptoContext->EvalMultKeyGen(keyPair1.secretKey);
-        KeyPair<DCRTPoly> keyPair2 = cryptoContext->KeyGen();
-        cryptoContext->EvalMultKeyGen(keyPair2.secretKey);
-
-        // Server.Encode, Server.Encrypt_sk
-        auto server_pos_i = {
-            cryptoContext->Encrypt(keyPair1.secretKey, cryptoContext->MakePackedPlaintext(server_pos_i_vec)),
-            cryptoContext->Encrypt(keyPair2.secretKey, cryptoContext->MakePackedPlaintext(server_pos_i_vec)),
-        };
-        auto server_pos_j = {
-            cryptoContext->Encrypt(keyPair1.secretKey, cryptoContext->MakePackedPlaintext(server_pos_j_vec)),
-            cryptoContext->Encrypt(keyPair2.secretKey, cryptoContext->MakePackedPlaintext(server_pos_j_vec)),
-        };
-
-        // Server.ZKP.Setup
-        // TODO
-    }
-}*/
-
-BENCHMARK_F(CustomFixture, Flipped2PC_Server_FHE_Teardown)(benchmark::State& state) {
-    // BENCH: (single) decryption
-    for (auto _ : state) {
-        // Server.Decrypt
-        Plaintext result;
-        cryptoContext->Decrypt(keyPair.secretKey, output, &result);
-    }
-}
-
+/*
 BENCHMARK_F(CustomFixture, Flipped2PC_ZKP)(benchmark::State& state) {
     for (auto _ : state) {
         LibsnarkProofSystem ps(cryptoContext);
@@ -335,48 +309,6 @@ BENCHMARK_F(CustomFixture, Flipped2PC_ZKP)(benchmark::State& state) {
         cout << "#constraints: " << pb.num_constraints() << endl;
     }
 }
-
-/*BENCHMARK_F(CustomFixture, Flipped2PC_Server_ZKP_Teardown)(benchmark::State& state) {
-    // BENCH: (double) decryption + ZKP verify
-
-    //    protoboard<FieldT> pb;
-    //    pb_variable<FieldT> v1, v2;
-    //    v1.allocate(pb, "v1");
-    //    v2.allocate(pb, "v2");
-    //    pb.add_r1cs_constraint(r1cs_constraint<FieldT>(v1, v2, v1));
-    //
-    //    pb.set_input_sizes(1);
-    //    const auto keypair = r1cs_gg_ppzksnark_generator<default_r1cs_gg_ppzksnark_pp>(pb.get_constraint_system());
-    //
-    //    pb.val(v1)      = FieldT::one();
-    //    pb.val(v2)      = FieldT::one();
-    //    const auto prim = r1cs_primary_input<FieldT>(pb.primary_input());
-    //    const auto vk   = r1cs_gg_ppzksnark_verification_key<default_r1cs_gg_ppzksnark_pp>(keypair.vk);
-    //    const auto pi   = r1cs_gg_ppzksnark_prover(keypair.pk, pb.primary_input(), pb.auxiliary_input());
-    //    const auto pr   = r1cs_gg_ppzksnark_proof(pi);
-    //    const bool b1 =
-    //        r1cs_gg_ppzksnark_verifier_strong_IC<default_r1cs_gg_ppzksnark_pp>(*verification_key, *primary_input, *proof);
-    //    std::cout << "Verif1: " << b1 << std::endl;
-    //    assert(b1);
-    //    const bool b2 = r1cs_gg_ppzksnark_verifier_strong_IC<default_r1cs_gg_ppzksnark_pp>(vk, prim, pr);
-    //    std::cout << "Verif2: " << b1 << std::endl;
-    //    assert(b2);
-    KeyPair<DCRTPoly> keyPair1 = cryptoContext->KeyGen();
-    cryptoContext->EvalMultKeyGen(keyPair1.secretKey);
-    KeyPair<DCRTPoly> keyPair2 = cryptoContext->KeyGen();
-    cryptoContext->EvalMultKeyGen(keyPair2.secretKey);
-
-    for (auto _ : state) {
-        // Server.Decrypt, Server.Encrypt_sk
-        Plaintext result1, result2;
-        cryptoContext->Decrypt(keyPair1.secretKey, output, &result1);
-        cryptoContext->Decrypt(keyPair2.secretKey, output, &result2);
-
-        // Server.ZKP.Verify
-        // TODO
-        //        bool verified = r1cs_gg_ppzksnark_verifier_strong_IC<default_r1cs_gg_ppzksnark_pp>(vk, prim, pr);
-        //        std::cout << verified << std::endl;
-    }
-}*/
+*/
 
 BENCHMARK_MAIN();
