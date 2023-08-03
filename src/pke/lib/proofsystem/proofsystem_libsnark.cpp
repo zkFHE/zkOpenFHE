@@ -472,15 +472,13 @@ void LibsnarkProofSystem::ConstrainMultiplication(const Ciphertext<DCRTPoly>& ct
     }
 
     // SetFormat(EVALUATION)
-    assert(ptxt->GetElement<DCRTPoly>().GetFormat() == EVALUATION);
-    //    const Plaintext ptxt_eval(ptxt);
-    //    ptxt_eval->SetFormat(EVALUATION);
-    //    DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
-    //    vector<vector<pb_linear_combination<FieldT>>> eval_lc;
-    //    vector<FieldT> eval_max_value;
-    //    ConstrainSetFormat(EVALUATION, pt, pt_eval, in2_lc, in2_max_value, eval_lc, eval_max_value);
-    vector<vector<pb_linear_combination<FieldT>>> eval_lc = in2_lc;
-    vector<FieldT> eval_max_value                         = in2_max_value;
+    //    assert(ptxt->GetElement<DCRTPoly>().GetFormat() == EVALUATION);
+    const Plaintext ptxt_eval(ptxt);
+    ptxt_eval->SetFormat(EVALUATION);
+    DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
+    vector<vector<pb_linear_combination<FieldT>>> eval_lc;
+    vector<FieldT> eval_max_value;
+    ConstrainSetFormat(EVALUATION, pt, pt_eval, in2_lc, in2_max_value, eval_lc, eval_max_value);
 
     // Multiply each entry of ctxt with ptxt
     LibsnarkProofMetadata out(in1.size());
@@ -997,10 +995,16 @@ void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const VecType2
                                              const vector<pb_linear_combination<FieldT>>& in_lc,
                                              const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
                                              FieldT& out_max_value) {
-    assert(in.GetFormat() != format);
     assert(out.GetFormat() == format);
     assert(in.GetLength() == out.GetLength());
     assert(in.GetLength() == in_lc.size());
+    if (in.GetFormat() == format) {
+        assert(in == out);
+        out_lc        = in_lc;
+        out_max_value = in_max_value;
+        return;
+    }
+    assert(in.GetFormat() != format);
 
     using namespace intnat;
 
