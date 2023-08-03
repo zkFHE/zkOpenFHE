@@ -1,0 +1,34 @@
+nohup: ignoring input
+BGV.N=1024
+BGV.logT=17
+BGV.Q=1531525307593818087096195826907752117167620600456957953
+#inputs:      24576
+#variables:  24576
+#constraints: 0
+
+#inputs:      24576
+#variables:  4308158
+#constraints: 4414654
+
+#inputs:      24576
+#variables:  4549822
+#constraints: 4668606
+
+#inputs:      24576
+#variables:  22137527
+#constraints: 22671046
+
+#inputs:      24576
+#variables:  24295702
+#constraints: 24894757
+
+#inputs:      24576
+#variables:  29427573
+#constraints: 30129028
+
+== Done with main circuit, finalizing output constraints and eagerly mod-reducing outstanding constraints ===
+==============
+#inputs:      24576
+#variables:  29427573
+#constraints: 30137220
+
