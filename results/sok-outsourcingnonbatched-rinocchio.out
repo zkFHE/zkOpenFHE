@@ -1,0 +1,35 @@
+nohup: ignoring input
+2023-08-04T07:55:23+00:00
+Running ../build/bench_sok_outsourcing_nonbatched
+Run on (36 X 3000 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x18)
+  L1 Instruction 32 KiB (x18)
+  L2 Unified 1024 KiB (x18)
+  L3 Unified 25344 KiB (x1)
+Load Average: 0.07, 0.20, 0.19
+[PARAM] Parameter validation (success): valid
+[PARAM] Batching enabled: true
+[PARAM] poly_modulus_degree N=2048
+[PARAM] plain_modulus log(t)=16 bits
+[PARAM] coeff_modulus log(q)=54 = 54 bits
+[PARAM] coeff_modulus.size=1
+[PARAM] plain_modulus t=61441
+[PARAM] coeff_modulus q=18014398508400641
+#inputs	133
+#variables	519
+#constraints	263
+R1CS satisfied: true
+
+#Inputs	133
+#Variables	519
+#Constraints	263
+#Constraints	263
+R1CS satisfied: true
+
+-------------------------------------------------------------------
+Benchmark                         Time             CPU   Iterations
+-------------------------------------------------------------------
+BM_PlaintextCheck_Setup  9050715260 ns   9029845145 ns            1
+BM_PlaintextCheck_Prove  1.8651e+10 ns   1.8528e+10 ns            1
+BM_PlaintextCheck_Verify 7068443200 ns   7068076421 ns            1
