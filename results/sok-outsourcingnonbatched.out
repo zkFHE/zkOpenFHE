@@ -1,0 +1,32 @@
+nohup: ignoring input
+2023-08-04T09:11:42+00:00
+Running ./bin/benchmark/sok-outsourcingnonbatched
+Run on (36 X 1216.71 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x18)
+  L1 Instruction 32 KiB (x18)
+  L2 Unified 1024 KiB (x18)
+  L3 Unified 25344 KiB (x1)
+Load Average: 1.13, 0.72, 0.28
+N =    2048
+logT = 17
+N =    2048
+logT = 17
+N =    2048
+logT = 17
+-------------------------------------------------------------------------------------
+Benchmark                                           Time             CPU   Iterations
+-------------------------------------------------------------------------------------
+CustomFixture/Outsourcing_FHE_Client_Setup   61194310 ns     61193220 ns           16
+N =    2048
+logT = 17
+N =    2048
+logT = 17
+CustomFixture/Outsourcing_FHE_Client_Eval   153310239 ns    153306996 ns            5
+N =    2048
+logT = 17
+N =    2048
+logT = 17
+N =    2048
+logT = 17
+CustomFixture/Outsourcing_FHE_Server_Eval    14272189 ns     14271909 ns           49
