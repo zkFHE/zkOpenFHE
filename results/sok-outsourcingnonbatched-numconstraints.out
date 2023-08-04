@@ -1,0 +1,18 @@
+N =    2048
+logT = 17
+prod := client_in * server_in
+prod := client_in * server_in
+#inputs:      227328
+#variables:  423936
+#constraints: 196608
+
+#inputs:      227328
+#variables:  460800
+#constraints: 233472
+
+== Done with main circuit, finalizing output constraints and eagerly mod-reducing outstanding constraints ===
+==============
+#inputs:      227328
+#variables:  2783232
+#constraints: 2623488
+
