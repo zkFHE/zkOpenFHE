@@ -397,6 +397,47 @@ void LibsnarkProofSystem::ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt
     SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
 }
 
+void LibsnarkProofSystem::ConstrainSquare2(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out) {
+    const auto in = *GetProofMetadata(ctxt);
+
+    const auto num_limbs = in.modulus.size();
+    assert(
+        ctxt->GetElements()[0].GetNumOfElements() == ctxt_out->GetElements()[0].GetNumOfElements() &&
+        "mismatch between number of limbs between ciphertext input and output. Are you using the FIXEDMANUAL scaling technique?");
+    assert(in.size() == 3);
+
+    LibsnarkProofMetadata out(5);
+    for (size_t i = 0; i < out.size(); i++) {
+        out[i]           = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
+        out.max_value[i] = vector<FieldT>(num_limbs);
+    }
+    out.modulus = in.modulus;
+
+    LibsnarkProofMetadata tmp(1);
+    for (size_t i = 0; i < tmp.size(); i++) {
+        tmp[i]           = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
+        tmp.max_value[i] = vector<FieldT>(num_limbs);
+    }
+    tmp.modulus = in.modulus;
+
+    constrain_mulmod_lazy(in, 0, in, 0, out, 0);
+
+    constrain_mulmod_lazy(in, 0, in, 1, out, 1);
+    constrain_addmod_lazy(out, 1, out, 1, out, 1);
+
+    constrain_mulmod_lazy(in, 0, in, 2, tmp, 0);
+    constrain_addmod_lazy(tmp, 0, tmp, 0, tmp, 0);
+    constrain_mulmod_lazy(in, 1, in, 1, out, 2);
+    constrain_addmod_lazy(tmp, 0, out, 2, out, 2);
+
+    constrain_mulmod_lazy(in, 1, in, 2, out, 3);
+    constrain_addmod_lazy(out, 3, out, 3, out, 3);
+
+    constrain_mulmod_lazy(in, 2, in, 2, out, 4);
+
+    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
+}
+
 void LibsnarkProofSystem::ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                                   Ciphertext<DCRTPoly>& ctxt_out) {
     const auto in1 = *GetProofMetadata(ctxt1);

@@ -322,7 +322,7 @@ size_t DenseLayer::input_size() {
 int main() {
     // Application setup
     /// Size of the input vector, i.e. flattened 32x32 image
-//    const size_t input_size = 1024;  // 32x32
+    //    const size_t input_size = 1024;  // 32x32
     //TODO:
     const size_t input_size = 32;
 
