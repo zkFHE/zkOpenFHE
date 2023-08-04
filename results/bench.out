@@ -1,0 +1,33 @@
+Parameters : logN=12, T=786433, logT=19, logQ=79, sigma = 3.200000, NumReplications=1, NSlots=4096
+number of lines: 131
+File HG01879 with 8192 SNP entries
+Expected disease susceptibility is: 0.29716968248352765
+Packing into 2 Ciphertext
+2023/08/04 11:31:20 2
+goos: linux
+goarch: amd64
+pkg: github.com/ldsec/vche/examples/DiseaseSusceptibilityPacked/vche_2_nonbatched
+cpu: Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz
+BenchmarkDiseaseSusceptibility/PE/Encode-36         	       2	 605260784 ns/op
+BenchmarkDiseaseSusceptibility/PE/Encrypt-36        	       4	 285787770 ns/op
+BenchmarkDiseaseSusceptibility/PE/Eval-36           	       3	 466850437 ns/op
+BenchmarkDiseaseSusceptibility/PE/EvalVerif-36      	     691	   1729247 ns/op
+BenchmarkDiseaseSusceptibility/PE/Communication/SP->Client-36         	1000000000	         5.000 BFV-ctxt	   1640674 bytes
+BenchmarkDiseaseSusceptibility/PE/Decrypt-36                          	     355	   3383510 ns/op
+panic: verification failed due to mismatch
+
+goroutine 71 [running]:
+github.com/ldsec/vche/vche_2.(*encoder).verifyUint(0xc000027680, 0xc00000e7e0, 0xc00228e0a0)
+	/home/ubuntu/VCHE-private/vche_2/encoder.go:265 +0x66e
+github.com/ldsec/vche/vche_2.(*encoder).DecodeUint(0xc000027680, 0x0, 0xc00011fee8, {0xc000388000, 0x1000, 0x1a861564})
+	/home/ubuntu/VCHE-private/vche_2/encoder.go:278 +0x35
+github.com/ldsec/vche/examples/DiseaseSusceptibilityPacked/vche_2_nonbatched.benchDec.func3(0xc0000f3680)
+	/home/ubuntu/VCHE-private/examples/DiseaseSusceptibilityPacked/vche_2_nonbatched/benchmark_test.go:192 +0x67
+testing.(*B).runN(0xc0000f3680, 0x1)
+	/home/ubuntu/go/src/testing/benchmark.go:192 +0x126
+testing.(*B).run1.func1()
+	/home/ubuntu/go/src/testing/benchmark.go:232 +0x59
+created by testing.(*B).run1
+	/home/ubuntu/go/src/testing/benchmark.go:225 +0xa5
+exit status 2
+FAIL	github.com/ldsec/vche/examples/DiseaseSusceptibilityPacked/vche_2_nonbatched	10.396s
