@@ -19,11 +19,17 @@
 #include "proofsystem/gadgets_libsnark.h"
 #include "libsnark/common/default_types/r1cs_ppzksnark_pp.hpp"
 #include "openfhe.h"
-#include "proofsystem/proofsystem_libsnark.cpp"  // TODO: fix this ugly hack after the deadline, at the moment the build system throws a weird linker error without this hack
 #include "proofsystem/proofsystem_libsnark.h"
 
 namespace {
 typedef libff::Fr<libff::default_ec_pp> FieldT;
+
+void print_stats(const libsnark::protoboard<FieldT>& pb) {
+    cout << ::testing::UnitTest::GetInstance()->current_test_info()->name() << endl;
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:   " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
+}
 
 TEST(libsnark_openfhe_gadgets, less_than_constant) {
     libff::default_ec_pp::init_public_params();
@@ -134,8 +140,8 @@ TEST(libsnark_openfhe_gadgets, ntt) {
     FieldT out_max_value;
 
     ps.ConstrainNTT(ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus[modulus],
-                    ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityPreconReverseTableByModulus[modulus], in_0_0,
-                    out_0_0, in_lc, in_max_value, out_lc, out_max_value);
+                    ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityPreconReverseTableByModulus[modulus], in_0,
+                    out_0, in_lc, in_max_value, out_lc, out_max_value);
 
     auto pb = ps.pb;
     EXPECT_EQ(pb.is_satisfied(), true);
@@ -145,6 +151,7 @@ TEST(libsnark_openfhe_gadgets, ntt) {
         out_lc[i].evaluate(pb);
         EXPECT_EQ(mod(pb.lc_val(out_lc[i]), q), FieldT(out_0_0[i].ConvertToInt()));
     }
+    print_stats(pb);
 }
 
 TEST(libsnark_openfhe_gadgets, intt) {
@@ -207,9 +214,12 @@ TEST(libsnark_openfhe_gadgets, intt) {
                      ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInversePreconReverseTableByModulus[modulus],
                      ChineseRemainderTransformFTTNat<VecType>::m_cycloOrderInverseTableByModulus[modulus][msb],
                      ChineseRemainderTransformFTTNat<VecType>::m_cycloOrderInversePreconTableByModulus[modulus][msb],
-                     in_0_0, out_0_0, in_lc, in_max_value, out_lc, out_max_value);
+                     in_0, out_0, in_lc, in_max_value, out_lc, out_max_value);
 
     auto pb = ps.pb;
+
+    print_stats(pb);
+
     EXPECT_EQ(pb.is_satisfied(), true);
 
     FieldT q(modulus.template ConvertToInt<unsigned long>());
@@ -218,9 +228,7 @@ TEST(libsnark_openfhe_gadgets, intt) {
         EXPECT_EQ(mod(pb.lc_val(out_lc[i]), q), FieldT(out_0_0[i].ConvertToInt()));
     }
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 }
 
 TEST(libsnark_openfhe_gadgets, set_format) {
@@ -268,9 +276,8 @@ TEST(libsnark_openfhe_gadgets, set_format) {
         out_lc[i].evaluate(pb);
         EXPECT_EQ(mod(pb.lc_val(out_lc[i]), q), FieldT(out[i].ConvertToInt()));
     }
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+
+    print_stats(pb);
 }
 
 TEST(libsnark_openfhe_gadgets, switch_modulus) {
@@ -329,9 +336,8 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
         out_lc[i].evaluate(pb);
         EXPECT_EQ(pb.lc_val(out_lc[i]), FieldT(out_0[i].ConvertToInt()));
     }
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+
+    print_stats(pb);
 }
 
 TEST(libsnark_openfhe_gadgets, key_switch_precompute_core) {
@@ -387,9 +393,8 @@ TEST(libsnark_openfhe_gadgets, key_switch_precompute_core) {
             }
         }
     }
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+
+    print_stats(pb);
 }
 
 TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
@@ -444,6 +449,8 @@ TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
             }
         }
     }
+    ps.pb.set_input_sizes(in_lc.size() * in_lc[0].size() * in_lc[0][0].size());
+
     vector<vector<vector<pb_linear_combination<FieldT>>>> out_lc;
     vector<vector<FieldT>> out_max_value;
 
@@ -452,16 +459,14 @@ TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
     for (size_t i = 0; i < out_lc.size(); ++i) {
         for (size_t j = 0; j < out_lc[i].size(); ++j) {
             auto q = FieldT((*out)[i].GetElementAtIndex(j).GetModulus().template ConvertToInt<unsigned long>());
-            for (size_t k = 0; k < out_lc[j].size(); ++k) {
+            for (size_t k = 0; k < out_lc[i][j].size(); ++k) {
                 out_lc[i][j][k].evaluate(pb);
                 auto expected = (*out)[i].GetElementAtIndex(j).GetValues()[k];
                 EXPECT_EQ(mod(pb.lc_val(out_lc[i][j][k]), q), FieldT(expected.ConvertToInt()));
@@ -500,9 +505,7 @@ TEST(libsnark_openfhe_gadgets, add) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -547,9 +550,7 @@ TEST(libsnark_openfhe_gadgets, add_plain) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -597,9 +598,7 @@ TEST(libsnark_openfhe_gadgets, sub) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -644,9 +643,7 @@ TEST(libsnark_openfhe_gadgets, sub_plain) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -692,9 +689,7 @@ TEST(libsnark_openfhe_gadgets, rescale) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -742,9 +737,7 @@ TEST(libsnark_openfhe_gadgets, rotation) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -793,9 +786,7 @@ TEST(libsnark_openfhe_gadgets, mult) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -842,9 +833,7 @@ TEST(libsnark_openfhe_gadgets, mult_plain) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -891,9 +880,7 @@ TEST(libsnark_openfhe_gadgets, square) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -953,9 +940,7 @@ TEST(libsnark_openfhe_gadgets, relin) {
 
     auto pb = ps.pb;
 
-    cout << "#inputs:      " << pb.num_inputs() << endl;
-    cout << "#variables:   " << pb.num_variables() << endl;
-    cout << "#constraints: " << pb.num_constraints() << endl;
+    print_stats(pb);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 

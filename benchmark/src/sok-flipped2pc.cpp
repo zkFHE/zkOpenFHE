@@ -2,7 +2,6 @@
 #include "gen-cryptocontext.h"
 
 #include "proofsystem/proofsystem_libsnark.h"
-#include "proofsystem/proofsystem_libsnark.cpp"  // TODO FIXME
 
 #include <libsnark/zk_proof_systems/ppzksnark/r1cs_gg_ppzksnark/r1cs_gg_ppzksnark.hpp>
 

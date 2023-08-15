@@ -75,11 +75,9 @@ public:
 
     void ConstrainSquare2(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
 
-    template <typename DCRTPoly>
     void ConstrainRescale(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
 
-    template <typename VecType2>
-    void ConstrainSetFormat(Format format, const VecType2& in, const VecType2& out,
+    void ConstrainSetFormat(Format format, const DCRTPoly::PolyType& in, const DCRTPoly::PolyType& out,
                             const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
                             vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
 
@@ -88,28 +86,24 @@ public:
                             const vector<FieldT>& in_max_value, vector<vector<pb_linear_combination<FieldT>>>& out_lc,
                             vector<FieldT>& out_max_value);
 
-    template <typename VecType, typename VecType2>
-    void ConstrainNTT(const VecType& rootOfUnityTable, const VecType& preconRootOfUnityTable, const VecType2& element,
-                      const VecType2& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
+    void ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfUnityTable, const DCRTPoly::PolyType::Vector& preconRootOfUnityTable, const DCRTPoly::PolyType& element,
+                      const DCRTPoly::PolyType& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
                       const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
 
-    template <typename IntType, typename VecType, typename VecType2>
-    void ConstrainINTT(const VecType& rootOfUnityInverseTable, const VecType& preconRootOfUnityInverseTable,
-                       const IntType& cycloOrderInv, const IntType& preconCycloOrderInv, const VecType2& element,
-                       const VecType2& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
-                       const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
-                       FieldT& out_max_value);
+    void ConstrainINTT(const DCRTPoly::PolyType::Vector& rootOfUnityInverseTable, const DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
+                       const DCRTPoly::PolyType::Vector::Integer& cycloOrderInv, const DCRTPoly::PolyType::Vector::Integer& preconCycloOrderInv,
+                       const DCRTPoly::PolyType& element, const DCRTPoly::PolyType& element_out,
+                       const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                       vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
 
-    template <typename VecType>
-    void ConstrainSwitchModulus(const typename VecType::Integer& newModulus,
-                                const typename VecType::Integer& rootOfUnity,
-                                const typename VecType::Integer& modulusArb,
-                                const typename VecType::Integer& rootOfUnityArb, const PolyImpl<VecType>& in,
-                                const PolyImpl<VecType>& out, const vector<pb_linear_combination<FieldT>>& in_lc,
+    void ConstrainSwitchModulus(const DCRTPoly::PolyType::Vector::Integer& newModulus,
+                                const DCRTPoly::PolyType::Vector::Integer& rootOfUnity,
+                                const DCRTPoly::PolyType::Vector::Integer& modulusArb,
+                                const DCRTPoly::PolyType::Vector::Integer& rootOfUnityArb, const DCRTPoly::PolyType& in,
+                                const DCRTPoly::PolyType& out, const vector<pb_linear_combination<FieldT>>& in_lc,
                                 const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
                                 FieldT& out_max_value);
 
-    template <typename DCRTPoly>
     void ConstrainKeySwitchPrecomputeCore(const DCRTPoly& in,
                                           const std::shared_ptr<CryptoParametersBase<DCRTPoly>>& cryptoParamsBase,
                                           const std::shared_ptr<std::vector<DCRTPoly>>& out,
@@ -118,22 +112,19 @@ public:
                                           vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                           vector<vector<FieldT>>& out_max_value);
 
-    template <typename DCRTPoly>
     void ConstrainFastKeySwitchCore(const EvalKey<DCRTPoly>& evalKey,
-                                    const std::shared_ptr<typename DCRTPoly::Params>& paramsQl,
+                                    const std::shared_ptr<DCRTPoly::Params>& paramsQl,
                                     const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc,
                                     const vector<vector<FieldT>>& in_max_value,
                                     vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                     vector<vector<FieldT>>& out_max_value);
 
-    template <typename DCRTPoly>
     void ConstrainFastKeySwitchCore(
         const std::shared_ptr<std::vector<DCRTPoly>>& digits, const EvalKey<DCRTPoly>& evalKey,
-        const std::shared_ptr<typename DCRTPoly::Params>& paramsQl, std::shared_ptr<std::vector<DCRTPoly>>& out,
+        const std::shared_ptr<DCRTPoly::Params>& paramsQl, std::shared_ptr<std::vector<DCRTPoly>>& out,
         const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc, const vector<vector<FieldT>>& in_max_value,
         vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc, vector<vector<FieldT>>& out_max_value);
 
-    template <typename DCRTPoly>
     void ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext, Ciphertext<DCRTPoly>& out);
 
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
@@ -150,12 +141,10 @@ public:
     void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt2,
                                  Ciphertext<DCRTPoly>& ctxt_out);
 
-    template <typename DCRTPoly>
     void ConstrainRotate(const Ciphertext<DCRTPoly>& ciphertext, int rot_idx, Ciphertext<DCRTPoly>& ctxt_out);
     void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt,
                                Ciphertext<DCRTPoly>& ctxt_out);
 
-    template <typename DCRTPoly>
     void ConstrainKeySwitch(const Ciphertext<DCRTPoly>& ctxt_i, const EvalKey<DCRTPoly>& evalKey,
                             Ciphertext<DCRTPoly>& ctxt_out);
 };

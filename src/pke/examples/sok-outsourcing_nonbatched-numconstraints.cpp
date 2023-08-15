@@ -2,7 +2,6 @@
 #include "proofsystem/proofsystem_libsnark.h"
 #include <vector>
 #include <cassert>
-#include "proofsystem/proofsystem_libsnark.cpp"  // TODO: FIXME
 
 using namespace lbcrypto;
 using std::cout, std::endl;
