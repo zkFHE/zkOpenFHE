@@ -7,7 +7,6 @@
 #include "keyswitch/keyswitch-bv.h"
 #include "scheme/bgvrns/bgvrns-leveledshe.h"
 #include "scheme/bgvrns/cryptocontext-bgvrns.h"
-#include "gen-cryptocontext.h"
 
 #include <vector>
 #undef NDEBUG
@@ -748,12 +747,16 @@ void LibsnarkProofSystem::ConstrainSwitchModulus(
 #endif
 }
 
-void LibsnarkProofSystem::ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
-                                       const DCRTPoly::PolyType::Vector& preconRootOfUnityTable,
-                                       const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
-                                       const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
-                                       vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value) {
-    // Taken from NumberTheoreticTransformNat<DCRTPoly::PolyType::Vector>::ForwardTransformToBitReverseInPlace
+void LibsnarkProofSystem::ConstrainNTTClassic(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
+                                              const DCRTPoly::PolyType::Vector& preconRootOfUnityTable,
+                                              const DCRTPoly::PolyType& element_in,
+                                              const DCRTPoly::PolyType& element_out,
+                                              const vector<pb_linear_combination<FieldT>>& in_lc,
+                                              const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
+                                              FieldT& out_max_value) {
+    // Taken from NumberTheoreticTransformNat<VecType>::ForwardTransformToBitReverseInPlace
+    // See https://openfhe-development.readthedocs.io/en/stable/api/classintnat_1_1NumberTheoreticTransformNat.html#_CPPv4N6intnat27NumberTheoreticTransformNat28ForwardTransformToBitReverseERK7VecTypeRK7VecTypeP7VecType
+    // Implements Algorithm 1 in https://eprint.iacr.org/2016/504.pdf
     auto element(element_in);
     assert(element.GetLength() == in_lc.size());
 #ifdef PROOFSYSTEM_CHECK_STRICT
@@ -797,8 +800,6 @@ void LibsnarkProofSystem::ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfU
                 omegaFactor = element[indexHi];
                 omegaFactor.ModMulFastConstEq(omega, modulus, preconOmega);
 
-                auto oldLoVal = loVal;
-
                 hiVal = loVal + omegaFactor;
                 if (hiVal >= modulus) {
                     hiVal -= modulus;
@@ -829,8 +830,6 @@ void LibsnarkProofSystem::ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfU
 
 #endif
                 LazyAddModGadget<FieldT> g2(pb, out_lc[indexLo], out_max_values[indexLo], g1.out, g1_out_max_value, q);
-                //                LazyAddModGadget<FieldT> g2(pb, out_lc[indexLo], out_max_values[indexLo], FieldT(omegaFactor.template ConvertToInt<unsigned long>()), q);
-
                 LazySubModGadget<FieldT> g3(pb, out_lc[indexLo], out_max_values[indexLo], g1.out, g1_out_max_value, q);
 
                 g2.generate_r1cs_constraints();
@@ -881,6 +880,124 @@ void LibsnarkProofSystem::ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfU
 #endif
 }
 
+void LibsnarkProofSystem::ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
+                                       const DCRTPoly::PolyType::Vector& preconRootOfUnityTable,
+                                       const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
+                                       const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                                       vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value) {
+    assert(element_in.GetLength() == in_lc.size());
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    for (int i = 0; i < in_lc.size(); i++) {
+        in_lc[i].evaluate(pb);
+        assert(lt_eq(pb.lc_val(in_lc[i]), in_max_value));
+        assert(mod(pb.lc_val(in_lc[i]), FieldT(element.GetModulus().template ConvertToInt<unsigned long>())) ==
+               FieldT(element[i].template ConvertToInt<unsigned long>()));
+    }
+#endif
+
+    out_lc = vector<pb_linear_combination<FieldT>>(in_lc.size());
+
+    assert(out_lc.size() == in_lc.size());
+
+    const usint n    = element_in.GetLength();
+    const auto msb   = lbcrypto::GetMSB64(n - 1);
+    const auto& q    = element_in.GetModulus();
+    const auto q_int = q.template ConvertToInt<unsigned long>();
+    const auto& psi  = element_in.GetRootOfUnity();
+    const auto omega = psi.ModMul(psi, q);
+
+    // TODO: memoize pows, find more efficient (?) way to compute pows from powers of psi directly
+    // pows[i][j] = psi^j * omega^(ij) (mod q)
+    vector<DCRTPoly::PolyType::Vector::Integer> psi_pows(n);
+    psi_pows[0] = 1;
+    for (size_t k = 1; k < n; ++k) {
+        psi_pows[k] = psi_pows[k - 1].ModMul(psi, q);
+    }
+    vector<vector<DCRTPoly::PolyType::Vector::Integer>> pows(n, vector<DCRTPoly::PolyType::Vector::Integer>(n));
+    vector<vector<unsigned long>> pows_int(n, vector<unsigned long>(n));
+
+    //#pragma omp parallel for
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            const auto omega_pow_ij = omega.ModExp(i * j, q);
+            pows[i][j]              = psi_pows[j].ModMul(omega_pow_ij, q);
+            pows_int[i][j]          = pows[i][j].template ConvertToInt<unsigned long>();
+        }
+    }
+
+    /*
+    // TODO: this version generate slightly fewer constraints in some cases (e.g., when the inputs are just the right size), but is quite slow at constraint generation time
+    vector<FieldT> out_max_values(out_lc.size());
+     for (size_t i = 0; i < n; ++i) {
+        LazyMulModGadget<FieldT> g(pb, in_lc[0], in_max_value, FieldT(pows_int[i][0]), q_int);
+        out_lc[i]         = g.out;
+        out_max_values[i] = g.out_max_value;
+        for (size_t j = 1; j < n; ++j) {
+            LazyMulModGadget<FieldT> g_mul(pb, in_lc[j], in_max_value, FieldT(pows_int[i][j]), q_int);
+            LazyAddModGadget<FieldT> g_j(pb, out_lc[i], out_max_values[i], g_mul.out, g_mul.out_max_value, q_int);
+            out_lc[i]         = g_j.out;
+            out_max_values[i] = g_j.out_max_value;
+        }
+    }
+    // Set out_max_value to max of all out_max_values for soundness
+    out_max_value = 0;
+    for (size_t i = 0; i < n; i++) {
+       if (lt(out_max_value, out_max_values[i])) {
+           out_max_value = out_max_values[i];
+       }
+    }
+     */
+
+    bool overflows = 2 + std::max(in_max_value.as_bigint().num_bits(),
+                                  std::max((unsigned long)q.GetMSB(), (unsigned long)ceil(log2(n)))) >=
+                     FieldT::num_bits;
+    // This max_value bound might not necessarily be tight, but we might gain only a few bits in accuracy by using more precise accounting based on the actual values in pows.
+    FieldT max_value = FieldT(n) * FieldT(q_int - 1) * in_max_value;
+    overflows        = overflows || (max_value.as_bigint().num_bits() >= FieldT::num_bits);
+
+    vector<pb_linear_combination<FieldT>> ntt_in_lc;
+    FieldT ntt_in_max_value;
+    if (overflows) {
+        ntt_in_lc.reserve(in_lc.size());
+        for (size_t i = 0; i < n; i++) {
+            ModGadget<FieldT> g(pb, in_lc[i], in_max_value, q_int);
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            ntt_in_lc.emplace_back(g.out);
+        }
+        ntt_in_max_value = FieldT(q_int - 1);
+        max_value        = FieldT(n) * FieldT(q_int - 1) * ntt_in_max_value;
+    }
+    else {
+        // TODO: do not use copy constructor here
+        ntt_in_lc        = in_lc;
+        ntt_in_max_value = in_max_value;
+    }
+
+    vector<linear_combination<FieldT>> lc(n);
+    #pragma omp parallel for default(none) shared(n, lc, ntt_in_lc, pows_int)
+    for (size_t i = 0; i < n; ++i) {
+        lc[i] = 0;
+        for (size_t j = 0; j < n; ++j) {
+            lc[i] = lc[i] + ntt_in_lc[j] * FieldT(pows_int[i][j]);
+        }
+    }
+
+    out_max_value = max_value;
+    for (size_t i = 0; i < n; ++i) {
+        auto iinv = lbcrypto::ReverseBits(i, msb);
+        out_lc[iinv].assign(pb, lc[i]);
+    }
+
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    for (int i = 0; i < out_lc.size(); i++) {
+        out_lc[i].evaluate(pb);
+        assert(lt_eq(pb.lc_val(out_lc[i]), out_max_value));
+        assert(mod(pb.lc_val(out_lc[i]), FieldT(q)) == FieldT(element_out[i].template ConvertToInt<unsigned long>()));
+    }
+#endif
+}
+
 void LibsnarkProofSystem::ConstrainINTT(const DCRTPoly::PolyType::Vector& rootOfUnityInverseTable,
                                         const DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
                                         const DCRTPoly::PolyType::Vector::Integer& cycloOrderInv,
@@ -888,7 +1005,7 @@ void LibsnarkProofSystem::ConstrainINTT(const DCRTPoly::PolyType::Vector& rootOf
                                         const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
                                         const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
                                         vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value) {
-    // Taken from NumberTheoreticTransformNat<DCRTPoly::PolyType::Vector>::InverseTransformFromBitReverseInPlace
+    // Taken from NumberTheoreticTransformNat<VecType>::InverseTransformFromBitReverseInPlace
 
     auto element(element_in);
 #ifdef PROOFSYSTEM_CHECK_STRICT

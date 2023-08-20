@@ -86,12 +86,21 @@ public:
                             const vector<FieldT>& in_max_value, vector<vector<pb_linear_combination<FieldT>>>& out_lc,
                             vector<FieldT>& out_max_value);
 
-    void ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfUnityTable, const DCRTPoly::PolyType::Vector& preconRootOfUnityTable, const DCRTPoly::PolyType& element,
+    void ConstrainNTTClassic(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
+                      const DCRTPoly::PolyType::Vector& preconRootOfUnityTable, const DCRTPoly::PolyType& element_in,
                       const DCRTPoly::PolyType& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
                       const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
 
-    void ConstrainINTT(const DCRTPoly::PolyType::Vector& rootOfUnityInverseTable, const DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
-                       const DCRTPoly::PolyType::Vector::Integer& cycloOrderInv, const DCRTPoly::PolyType::Vector::Integer& preconCycloOrderInv,
+    void ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
+                         const DCRTPoly::PolyType::Vector& preconRootOfUnityTable, const DCRTPoly::PolyType& element_in,
+                         const DCRTPoly::PolyType& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
+                         const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
+                         FieldT& out_max_value);
+
+    void ConstrainINTT(const DCRTPoly::PolyType::Vector& rootOfUnityInverseTable,
+                       const DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
+                       const DCRTPoly::PolyType::Vector::Integer& cycloOrderInv,
+                       const DCRTPoly::PolyType::Vector::Integer& preconCycloOrderInv,
                        const DCRTPoly::PolyType& element, const DCRTPoly::PolyType& element_out,
                        const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
                        vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
@@ -112,18 +121,19 @@ public:
                                           vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                           vector<vector<FieldT>>& out_max_value);
 
-    void ConstrainFastKeySwitchCore(const EvalKey<DCRTPoly>& evalKey,
-                                    const std::shared_ptr<DCRTPoly::Params>& paramsQl,
+    void ConstrainFastKeySwitchCore(const EvalKey<DCRTPoly>& evalKey, const std::shared_ptr<DCRTPoly::Params>& paramsQl,
                                     const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc,
                                     const vector<vector<FieldT>>& in_max_value,
                                     vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                     vector<vector<FieldT>>& out_max_value);
 
-    void ConstrainFastKeySwitchCore(
-        const std::shared_ptr<std::vector<DCRTPoly>>& digits, const EvalKey<DCRTPoly>& evalKey,
-        const std::shared_ptr<DCRTPoly::Params>& paramsQl, std::shared_ptr<std::vector<DCRTPoly>>& out,
-        const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc, const vector<vector<FieldT>>& in_max_value,
-        vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc, vector<vector<FieldT>>& out_max_value);
+    void ConstrainFastKeySwitchCore(const std::shared_ptr<std::vector<DCRTPoly>>& digits,
+                                    const EvalKey<DCRTPoly>& evalKey, const std::shared_ptr<DCRTPoly::Params>& paramsQl,
+                                    std::shared_ptr<std::vector<DCRTPoly>>& out,
+                                    const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc,
+                                    const vector<vector<FieldT>>& in_max_value,
+                                    vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
+                                    vector<vector<FieldT>>& out_max_value);
 
     void ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext, Ciphertext<DCRTPoly>& out);
 
@@ -147,5 +157,10 @@ public:
 
     void ConstrainKeySwitch(const Ciphertext<DCRTPoly>& ctxt_i, const EvalKey<DCRTPoly>& evalKey,
                             Ciphertext<DCRTPoly>& ctxt_out);
+    void ConstrainNTTOpt(const intnat::NativeVectorT<NativeInteger>& rootOfUnityTable,
+                         const intnat::NativeVectorT<NativeInteger>& preconRootOfUnityTable,
+                         const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
+                         const vector<FieldT>& in_lc, const FieldT& in_max_value, vector<FieldT>& out_lc,
+                         FieldT& out_max_value);
 };
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H
