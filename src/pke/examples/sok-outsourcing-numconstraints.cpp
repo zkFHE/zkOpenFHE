@@ -140,6 +140,7 @@ int main() {
 
     // Do it all again with the ZKP
     LibsnarkProofSystem ps(cryptoContext);
+    ps.SetMode(PROOFSYSTEM_MODE::PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
     ps.ConstrainPublicInput(client_in_1);
     ps.ConstrainPublicInput(client_in_2);
     auto vars_out = *ps.ConstrainPublicOutput(out);

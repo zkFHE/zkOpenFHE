@@ -6,6 +6,7 @@
 #include "libsnark/zk_proof_systems/ppzksnark/r1cs_ppzksnark/r1cs_ppzksnark.hpp"
 #include "libsnark/common/default_types/r1cs_ppzksnark_pp.hpp"
 #include "libsnark/gadgetlib1/pb_variable.hpp"
+#include "gadgets_libsnark.h"
 #include "key/evalkey.h"
 
 #include <vector>
@@ -13,6 +14,11 @@ using std::vector;
 
 using namespace libsnark;
 typedef libff::Fr<default_r1cs_ppzksnark_pp> FieldT;
+
+enum PROOFSYSTEM_MODE {
+    PROOFSYSTEM_MODE_CONSTRAINT_GENERATION,
+    PROOFSYSTEM_MODE_WITNESS_GENERATION,
+};
 
 class LibsnarkProofMetadata : public ProofMetadata, private vector<vector<vector<pb_linear_combination<FieldT>>>> {
 public:
@@ -41,6 +47,25 @@ public:
     }
 };
 
+using LibsnarkConstraintMetadata = LibsnarkProofMetadata;
+
+class LibsnarkWitnessMetadata : public Metadata {
+    //    vector<vector<vector<size_t>>> variable_indices;
+public:
+    size_t index_start;
+    std::shared_ptr<protoboard<FieldT>> pb;
+    vector<std::shared_ptr<gadget_gen<FieldT>>> gadgets;
+};
+
+using WireID = std::string;
+
+class WireIdMetadata : public Metadata {
+public:
+    const WireID wire_id;
+
+    WireIdMetadata(const WireID& wireId) : wire_id(wireId) {}
+};
+
 class LibsnarkProofSystem : ProofSystem {
 protected:
     void constrain_addmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
@@ -49,27 +74,57 @@ protected:
                                size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
     void constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
                                size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
+    std::unordered_map<WireID, LibsnarkWitnessMetadata> wire_metadata;
+    static size_t global_wire_id;
 
 public:
     protoboard<FieldT> pb;
     const CryptoContext<DCRTPoly> cryptoContext;
+    PROOFSYSTEM_MODE mode;
 
     explicit LibsnarkProofSystem(const CryptoContext<DCRTPoly>& cryptoContext) : cryptoContext(cryptoContext) {
         default_r1cs_ppzksnark_pp::init_public_params();
-        pb = protoboard<FieldT>();
     }
+
+    void SetMode(PROOFSYSTEM_MODE mode) {
+        this->mode           = mode;
+        this->global_wire_id = 0;
+        if (mode == PROOFSYSTEM_MODE_CONSTRAINT_GENERATION) {
+            pb = protoboard<FieldT>();
+        }
+    }
+
+    static size_t get_next_wire_id() {
+        return global_wire_id++;
+    }
+
     void ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext) override;
+    void GenConstraintPublicInput(const Ciphertext<DCRTPoly>& ciphertext);
+    void GenWitnessPublicInput(Ciphertext<DCRTPoly>& ciphertext);
+
     std::shared_ptr<LibsnarkProofMetadata> ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext);
     void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                            Ciphertext<DCRTPoly>& ctxt_out) override;
+    void GenConstraintAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
+                               Ciphertext<DCRTPoly>& ctxt_out);
+    void GenWitnessAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
+                            Ciphertext<DCRTPoly>& ctxt_out);
 
     void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt, const Plaintext& ptxt, Ciphertext<DCRTPoly>& ctxt_out);
 
     void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                Ciphertext<DCRTPoly>& ctxt_out) override;
+    void GenConstraintSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
+                                   Ciphertext<DCRTPoly>& ctxt_out);
+    void GenWitnessSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
+                                Ciphertext<DCRTPoly>& ctxt_out);
 
     void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
                                  Ciphertext<DCRTPoly>& ctxt_out) override;
+    void GenConstraintMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
+                                     Ciphertext<DCRTPoly>& ctxt_out);
+    void GenWitnessMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
+                                  Ciphertext<DCRTPoly>& ctxt_out);
 
     void ConstrainSquare(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
 
@@ -87,15 +142,18 @@ public:
                             vector<FieldT>& out_max_value);
 
     void ConstrainNTTClassic(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
-                      const DCRTPoly::PolyType::Vector& preconRootOfUnityTable, const DCRTPoly::PolyType& element_in,
-                      const DCRTPoly::PolyType& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
-                      const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
+                             const DCRTPoly::PolyType::Vector& preconRootOfUnityTable,
+                             const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
+                             const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                             vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
 
     void ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
-                         const DCRTPoly::PolyType::Vector& preconRootOfUnityTable, const DCRTPoly::PolyType& element_in,
-                         const DCRTPoly::PolyType& element_out, const vector<pb_linear_combination<FieldT>>& in_lc,
-                         const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
-                         FieldT& out_max_value);
+                      const DCRTPoly::PolyType::Vector& preconRootOfUnityTable, const DCRTPoly::PolyType& element_in,
+                      const DCRTPoly::PolyType& element_out
+
+                      ,
+                      const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                      vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
 
     void ConstrainINTT(const DCRTPoly::PolyType::Vector& rootOfUnityInverseTable,
                        const DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
@@ -162,5 +220,10 @@ public:
                          const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
                          const vector<FieldT>& in_lc, const FieldT& in_max_value, vector<FieldT>& out_lc,
                          FieldT& out_max_value);
+    WireID GetWireID(const Ciphertext<DCRTPoly>& ciphertext);
+    void SetWireId(const Ciphertext<DCRTPoly>& ciphertext, const WireID& wire_id);
 };
+
+size_t LibsnarkProofSystem::global_wire_id = 0;
+
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H

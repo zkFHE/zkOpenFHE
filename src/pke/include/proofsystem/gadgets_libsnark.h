@@ -15,7 +15,17 @@ using std::cout, std::endl;
 using std::vector;
 
 template <typename FieldT>
-class is_less_than_constant_gadget : public gadget<FieldT> {
+class gadget_gen : public libsnark::gadget<FieldT> {
+public:
+    gadget_gen(protoboard<FieldT>& pb, const std::string& annotation_prefix = "")
+        : libsnark::gadget<FieldT>(pb, annotation_prefix) {}
+
+    virtual void generate_r1cs_constraints() const = 0;
+    virtual void generate_r1cs_witness() const     = 0;
+};
+
+template <typename FieldT>
+class is_less_than_constant_gadget : public gadget_gen<FieldT> {
 private:
     pb_variable_array<FieldT> alpha;
     pb_linear_combination<FieldT> alpha_packed;
@@ -30,7 +40,7 @@ public:
     // alpha[n] is less_or_eq
     is_less_than_constant_gadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT>& A,
                                  const size_t A_bit_size, const FieldT& B, const std::string& annotation_prefix = "")
-        : gadget<FieldT>(pb, FMT(annotation_prefix, "::less_than_constant_gadget")),
+        : gadget_gen<FieldT>(pb, FMT(annotation_prefix, "::less_than_constant_gadget")),
           A(A),
           B(B),
           n(std::max(A_bit_size, (B - 1).as_bigint().num_bits())) {
@@ -48,31 +58,30 @@ public:
             pb, alpha, alpha_packed, FMT(annotation_prefix, "::is_less_than_constant_gadget::less_or_eq")));
     };
 
-    void generate_r1cs_constraints();
-    void generate_r1cs_witness(bool assert_strict = true);
+    virtual void generate_r1cs_constraints() const override {
+        pack_alpha->generate_r1cs_constraints(true);
+    }
+
+    virtual void generate_r1cs_witness() const override {
+        generate_r1cs_witness(true);
+    }
+
+    void generate_r1cs_witness(bool assert_strict) const {
+        A.evaluate(this->pb);
+
+        pack_alpha->generate_r1cs_witness_from_packed();
+
+        if (assert_strict) {
+            assert((B - 1).as_bigint().num_bits() <= n &&
+                   "assumption B-1 <= 2^n bits violated in less_than_constant_gadget");
+            assert(this->pb.lc_val(A).as_bigint().num_bits() <= n &&
+                   "assumption A <= 2^n bits violated in less_than_constant_gadget");
+        }
+    }
 };
 
 template <typename FieldT>
-void is_less_than_constant_gadget<FieldT>::generate_r1cs_constraints() {
-    pack_alpha->generate_r1cs_constraints(true);
-}
-
-template <typename FieldT>
-void is_less_than_constant_gadget<FieldT>::generate_r1cs_witness(bool assert_strict) {
-    A.evaluate(this->pb);
-
-    pack_alpha->generate_r1cs_witness_from_packed();
-
-    if (assert_strict) {
-        assert((B - 1).as_bigint().num_bits() <= n &&
-               "assumption B-1 <= 2^n bits violated in less_than_constant_gadget");
-        assert(this->pb.lc_val(A).as_bigint().num_bits() <= n &&
-               "assumption A <= 2^n bits violated in less_than_constant_gadget");
-    }
-}
-
-template <typename FieldT>
-class less_than_constant_gadget : public gadget<FieldT> {
+class less_than_constant_gadget : public gadget_gen<FieldT> {
 private:
     pb_variable_array<FieldT> alpha;
     pb_linear_combination<FieldT> alpha_packed;
@@ -87,7 +96,7 @@ public:
     // alpha[n] is less_or_eq
     less_than_constant_gadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT>& A, const size_t A_bit_size,
                               const FieldT& B, const std::string& annotation_prefix = "")
-        : gadget<FieldT>(pb, FMT(annotation_prefix, "::less_than_constant_gadget")),
+        : gadget_gen<FieldT>(pb, FMT(annotation_prefix, "::less_than_constant_gadget")),
           A(A),
           B(B),
           n(std::max(A_bit_size, (B - 1).as_bigint().num_bits())) {
@@ -105,36 +114,35 @@ public:
                                                     FMT(annotation_prefix, "::less_than_constant_gadget::less_or_eq")));
     };
 
-    void generate_r1cs_constraints();
-    void generate_r1cs_witness(bool assert_strict = true);
+    virtual void generate_r1cs_constraints() const override {
+        pack_alpha->generate_r1cs_constraints(true);
+        this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(1, less_or_eq, 1),
+                                     FMT(this->annotation_prefix, "::custom_constraint"));
+    }
+
+    virtual void generate_r1cs_witness() const override {
+        generate_r1cs_witness(true);
+    }
+
+    void generate_r1cs_witness(bool assert_strict) const {
+        A.evaluate(this->pb);
+
+        pack_alpha->generate_r1cs_witness_from_packed();
+
+        if (assert_strict) {
+            assert((B - 1).as_bigint().num_bits() <= n &&
+                   "assumption B-1 <= 2^n bits violated in less_than_constant_gadget");
+            assert(this->pb.lc_val(A).as_bigint().num_bits() <= n &&
+                   "assumption A <= 2^n bits violated in less_than_constant_gadget");
+            assert(lt(this->pb.lc_val(A), B) && "less_than_constant constraint does not hold");
+            assert(this->pb.val(less_or_eq) == 1 &&
+                   "less_or_eq bit is not set to 1 with current assignment, constraints will not be satisfied");
+        }
+    }
 };
 
 template <typename FieldT>
-void less_than_constant_gadget<FieldT>::generate_r1cs_constraints() {
-    pack_alpha->generate_r1cs_constraints(true);
-    this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(1, less_or_eq, 1),
-                                 FMT(this->annotation_prefix, "::custom_constraint"));
-}
-
-template <typename FieldT>
-void less_than_constant_gadget<FieldT>::generate_r1cs_witness(bool assert_strict) {
-    A.evaluate(this->pb);
-
-    pack_alpha->generate_r1cs_witness_from_packed();
-
-    if (assert_strict) {
-        assert((B - 1).as_bigint().num_bits() <= n &&
-               "assumption B-1 <= 2^n bits violated in less_than_constant_gadget");
-        assert(this->pb.lc_val(A).as_bigint().num_bits() <= n &&
-               "assumption A <= 2^n bits violated in less_than_constant_gadget");
-        assert(lt(this->pb.lc_val(A), B) && "less_than_constant constraint does not hold");
-        assert(this->pb.val(less_or_eq) == 1 &&
-               "less_or_eq bit is not set to 1 with current assignment, constraints will not be satisfied");
-    }
-}
-
-template <typename FieldT>
-class ModGadget : public gadget<FieldT> {
+class ModGadget : public gadget_gen<FieldT> {
 protected:
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_quotient;
     std::shared_ptr<less_than_constant_gadget<FieldT>> lt_constant_remainder;
@@ -189,7 +197,7 @@ protected:
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
               const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
               const pb_variable<FieldT> out, const std::string& annotationPrefix = "", bool assert_strict = true)
-        : gadget<FieldT>(pb, annotationPrefix),
+        : gadget_gen<FieldT>(pb, annotationPrefix),
           in1(in1),
           in1_max_value(in1_max_value),
           in2(in2),
@@ -202,7 +210,7 @@ protected:
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
               const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
               const std::string& annotationPrefix = "", bool assert_strict = true)
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")),
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")),
           in1(in1),
           in1_max_value(in1_max_value),
           in2(in2),
@@ -215,7 +223,7 @@ protected:
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const FieldT in_max_value,
               const FieldT constant, size_t modulus, const pb_variable<FieldT> out,
               const std::string& annotationPrefix = "", bool assert_strict = true)
-        : gadget<FieldT>(pb, annotationPrefix), in1(in), in1_max_value(in_max_value), modulus(modulus), out(out) {
+        : gadget_gen<FieldT>(pb, annotationPrefix), in1(in), in1_max_value(in_max_value), modulus(modulus), out(out) {
         in2.assign(pb, constant);
         in2_max_value = constant;
         init(pb, assert_strict);
@@ -224,7 +232,7 @@ protected:
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const FieldT in_max_value,
               const FieldT constant, size_t modulus, const std::string& annotationPrefix = "",
               bool assert_strict = true)
-        : gadget<FieldT>(pb, annotationPrefix), in1(in), in1_max_value(in_max_value), modulus(modulus) {
+        : gadget_gen<FieldT>(pb, annotationPrefix), in1(in), in1_max_value(in_max_value), modulus(modulus) {
         out.allocate(pb, FMT(this->annotation_prefix, "::out"));
         in2.assign(pb, constant);
         in2_max_value = constant;
@@ -240,7 +248,7 @@ public:
 
     ModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in, const FieldT in_max_value, size_t modulus,
               const std::string& annotationPrefix = "", bool assert_strict = true)
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")),
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "::mod_gadget")),
           in1(in),
           in1_max_value(in_max_value),
           modulus(modulus) {
@@ -250,14 +258,14 @@ public:
         init(pb, assert_strict);
     }
 
-    void generate_r1cs_constraints() {
+    virtual void generate_r1cs_constraints() const override {
         this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(in1, in2, quotient * modulus + out),
                                      FMT(this->annotation_prefix, "::in1*in2=quotient*modulus+out"));
         lt_constant_quotient->generate_r1cs_constraints();
         lt_constant_remainder->generate_r1cs_constraints();
     }
 
-    void generate_r1cs_witness() {
+    virtual void generate_r1cs_witness() const override {
         in1.evaluate(this->pb);
         in2.evaluate(this->pb);
 
@@ -363,7 +371,7 @@ public:
 };
 
 template <typename FieldT>
-class LazyAddModGadget : public gadget<FieldT> {
+class LazyAddModGadget : public gadget_gen<FieldT> {
 protected:
     std::shared_ptr<AddModGadget<FieldT>> add_mod;
 
@@ -375,7 +383,7 @@ public:
     LazyAddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
                      const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
                      const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_add_mod")), in1(in1), in2(in2) {
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "lazy_add_mod")), in1(in1), in2(in2) {
         if (1 + std::max(in1_max_value.as_bigint().num_bits(), in2_max_value.as_bigint().num_bits()) >=
             FieldT::num_bits) {
             // addition would overflow field modulus, reduce now
@@ -393,7 +401,7 @@ public:
 
     LazyAddModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
                      const FieldT in2_constant, size_t modulus, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_add_mod")), in1(in1) {
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "lazy_add_mod")), in1(in1) {
         in2.assign(pb, in2_constant);
         if (1 + std::max(in1_max_value.as_bigint().num_bits(), in2_constant.as_bigint().num_bits()) >=
             FieldT::num_bits) {
@@ -409,12 +417,12 @@ public:
         }
     }
 
-    void generate_r1cs_constraints() {
+    virtual void generate_r1cs_constraints() const override {
         if (add_mod) {
             add_mod->generate_r1cs_constraints();
         }
     }
-    void generate_r1cs_witness() {
+    virtual void generate_r1cs_witness() const override {
         if (add_mod) {
             add_mod->generate_r1cs_witness();
         }
@@ -425,7 +433,7 @@ public:
 };
 
 template <typename FieldT>
-class LazySubModGadget : public gadget<FieldT> {
+class LazySubModGadget : public gadget_gen<FieldT> {
 protected:
     std::shared_ptr<SubModGadget<FieldT>> sub_mod;
 
@@ -437,7 +445,7 @@ public:
     LazySubModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
                      const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
                      const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_sub_mod")), in1(in1), in2(in2) {
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "lazy_sub_mod")), in1(in1), in2(in2) {
         assert(lt_eq(in2_max_value, FieldT(modulus)));
         if (1 + std::max(in1_max_value.as_bigint().num_bits(), (size_t)ceil(log2(modulus))) >= FieldT::num_bits) {
             // subtraction would overflow field modulus, reduce now
@@ -452,12 +460,12 @@ public:
             out_max_value = in1_max_value + FieldT(modulus);
         }
     }
-    void generate_r1cs_constraints() {
+    virtual void generate_r1cs_constraints() const override {
         if (sub_mod) {
             sub_mod->generate_r1cs_constraints();
         }
     }
-    void generate_r1cs_witness() {
+    virtual void generate_r1cs_witness() const override {
         if (sub_mod) {
             sub_mod->generate_r1cs_witness();
         }
@@ -468,7 +476,7 @@ public:
 };
 
 template <typename FieldT>
-class MulGadget : public gadget<FieldT> {
+class MulGadget : public gadget_gen<FieldT> {
 public:
     pb_linear_combination<FieldT> in1, in2;
     pb_linear_combination<FieldT> out;
@@ -476,7 +484,7 @@ public:
 
     MulGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const pb_linear_combination<FieldT> in2,
               const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, annotationPrefix), in1(in1), in2(in2) {
+        : gadget_gen<FieldT>(pb, annotationPrefix), in1(in1), in2(in2) {
         assert(!(in1.is_constant() && in2.is_constant()) && "unnecessary MulGadget if both inputs are constants");
         if (in1.is_constant()) {
             out.assign(pb, in1.constant_term() * in2);
@@ -490,14 +498,14 @@ public:
         }
     }
 
-    void generate_r1cs_constraints() {
+    virtual void generate_r1cs_constraints() const override {
         if (!in1.is_constant() && !in2.is_constant()) {
             this->pb.add_r1cs_constraint(r1cs_constraint<FieldT>(in1, in2, out),
                                          FMT(this->annotation_prefix, "::mul_constraint"));
         }
     }
 
-    void generate_r1cs_witness() {
+    virtual void generate_r1cs_witness() const override {
         if (!in1.is_constant() && !in2.is_constant()) {
             in1.evaluate(this->pb);
             in2.evaluate(this->pb);
@@ -507,7 +515,7 @@ public:
 };
 
 template <typename FieldT>
-class LazyMulModGadget : public gadget<FieldT> {
+class LazyMulModGadget : public gadget_gen<FieldT> {
 protected:
     std::shared_ptr<MulModGadget<FieldT>> mul_mod;
     std::shared_ptr<MulGadget<FieldT>> mul;
@@ -540,7 +548,7 @@ public:
     LazyMulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
                      const pb_linear_combination<FieldT> in2, const FieldT in2_max_value, size_t modulus,
                      const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_mul_mod")),
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "lazy_mul_mod")),
           in1(in1),
           in1_max_value(in1_max_value),
           in2(in2),
@@ -551,7 +559,7 @@ public:
 
     LazyMulModGadget(protoboard<FieldT>& pb, const pb_linear_combination<FieldT> in1, const FieldT in1_max_value,
                      const FieldT in2_constant, size_t modulus, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "lazy_mul_mod")),
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "lazy_mul_mod")),
           in1(in1),
           in1_max_value(in1_max_value),
           in2_max_value(in2_constant),
@@ -560,7 +568,7 @@ public:
         init(pb);
     }
 
-    void generate_r1cs_constraints() {
+    virtual void generate_r1cs_constraints() const override {
         if (mul_mod) {
             mul_mod->generate_r1cs_constraints();
         }
@@ -572,7 +580,7 @@ public:
         }
     }
 
-    void generate_r1cs_witness() {
+    virtual void generate_r1cs_witness() const override {
         if (mul_mod) {
             mul_mod->generate_r1cs_witness();
         }
@@ -586,13 +594,13 @@ public:
 };
 
 template <typename FieldT, typename Gadget>
-class BatchGadget : gadget<FieldT> {
+class BatchGadget : gadget_gen<FieldT> {
 public:
     vector<Gadget> gadgets;
 
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in, const FieldT in_max_value,
                 const size_t& modulus, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "::batch_gadget")) {
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "::batch_gadget")) {
         gadgets.reserve(in.size());
         for (size_t i = 0; i < in.size(); ++i) {
             gadgets.emplace_back(pb, in[i], in_max_value, modulus,
@@ -602,7 +610,7 @@ public:
 
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in, const FieldT in_max_value,
                 const size_t& modulus, const vector<pb_variable<FieldT>>& out, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "::batch_gadget")) {
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "::batch_gadget")) {
         assert(in.size() == out.size());
         gadgets.reserve(in.size());
         for (size_t i = 0; i < in.size(); ++i) {
@@ -613,7 +621,7 @@ public:
 
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in1,
                 const vector<pb_linear_combination<FieldT>>& in2, const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "::BatchGadget")) {
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "::BatchGadget")) {
         assert(in1.size() == in2.size());
         gadgets.reserve(in1.size());
         for (size_t i = 0; i < in1.size(); ++i) {
@@ -625,7 +633,7 @@ public:
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in1, const FieldT in1_max_value,
                 const vector<pb_linear_combination<FieldT>>& in2, const FieldT in2_max_value, const size_t& modulus,
                 const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "::BatchGadget")) {
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "::BatchGadget")) {
         assert(in1.size() == in2.size());
         gadgets.reserve(in1.size());
         for (size_t i = 0; i < in1.size(); ++i) {
@@ -634,13 +642,13 @@ public:
         }
     }
 
-    void generate_r1cs_constraints() {
+    virtual void generate_r1cs_constraints() const override {
         for (auto& g_i : gadgets) {
             g_i.generate_r1cs_constraints();
         }
     }
 
-    void generate_r1cs_witness() {
+    virtual void generate_r1cs_witness() const override {
         for (auto& g_i : gadgets) {
             g_i.generate_r1cs_witness();
         }
@@ -664,14 +672,14 @@ public:
 };
 
 template <typename FieldT, typename Gadget>
-class DoubleBatchGadget : gadget<FieldT> {
+class DoubleBatchGadget : gadget_gen<FieldT> {
 public:
     vector<vector<Gadget>> gadgets;
 
     DoubleBatchGadget(protoboard<FieldT>& pb, const vector<vector<pb_linear_combination<FieldT>>>& in1,
                       const vector<vector<pb_linear_combination<FieldT>>>& in2, const vector<size_t>& modulus,
                       const std::string& annotationPrefix = "")
-        : gadget<FieldT>(pb, FMT(annotationPrefix, "::DoubleBatchGadget")) {
+        : gadget_gen<FieldT>(pb, FMT(annotationPrefix, "::DoubleBatchGadget")) {
         assert(in1.size() == in2.size());
         assert(in1.size() == modulus.size());
         gadgets.reserve(in1.size());
@@ -688,7 +696,7 @@ public:
         }
     }
 
-    void generate_r1cs_constraints() {
+    virtual void generate_r1cs_constraints() const override {
         for (auto& g_i : gadgets) {
             for (auto& g_ij : g_i) {
                 g_ij.generate_r1cs_constraints();
@@ -696,7 +704,7 @@ public:
         }
     }
 
-    void generate_r1cs_witness() {
+    virtual void generate_r1cs_witness() const override {
         for (auto& g_i : gadgets) {
             for (auto& g_ij : g_i) {
                 g_ij.generate_r1cs_witness();
