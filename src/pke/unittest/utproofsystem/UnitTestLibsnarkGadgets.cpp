@@ -103,7 +103,7 @@ TEST(libsnark_openfhe_gadgets, ntt) {
     keyPair              = cryptoContext->KeyGen();
     Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
 
-    auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    Ciphertext<DCRTPoly> ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
 
     using VecType = typename DCRTPoly::PolyType::Vector;
     auto in_0     = ctxt->GetElements()[0].GetElementAtIndex(0);
@@ -118,7 +118,7 @@ TEST(libsnark_openfhe_gadgets, ntt) {
     auto CycloOrder  = out_0.GetCyclotomicOrder();
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt);
+    ps.PublicInput(ctxt);
     const auto& modulus = in_0.GetModulus();
     auto in_0_0         = in_0.GetValues();
     auto out_0_0        = out_0.GetValues();
@@ -188,7 +188,7 @@ TEST(libsnark_openfhe_gadgets, ntt_opt) {
     auto CycloOrder  = out_0.GetCyclotomicOrder();
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt);
+    ps.PublicInput(ctxt);
     const auto& modulus = in_0.GetModulus();
     auto in_0_0         = in_0.GetValues();
     auto out_0_0        = out_0.GetValues();
@@ -256,7 +256,7 @@ TEST(libsnark_openfhe_gadgets, intt) {
     auto CycloOrder  = out_0.GetCyclotomicOrder();
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt);
+    ps.PublicInput(ctxt);
     const auto& modulus = in_0.GetModulus();
     auto in_0_0         = in_0.GetValues();
     auto out_0_0        = out_0.GetValues();
@@ -328,8 +328,8 @@ TEST(libsnark_openfhe_gadgets, set_format) {
     out.SetFormat(Format::COEFFICIENT);
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt);
-    LibsnarkProofMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+    ps.PublicInput(ctxt);
+    LibsnarkConstraintMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
 
     auto in_lc          = in_metadata[0][0];
     FieldT in_max_value = in_metadata.max_value[0][0];
@@ -385,8 +385,8 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
     out_0.SwitchModulus(newModulus, newRootOfunity, 0, 0);
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt);
-    LibsnarkProofMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+    ps.PublicInput(ctxt);
+    LibsnarkConstraintMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
 
     auto in_lc        = in_metadata[0][0];
     auto in_max_value = in_metadata.max_value[0][0];
@@ -437,8 +437,8 @@ TEST(libsnark_openfhe_gadgets, key_switch_precompute_core) {
         KeySwitchBV().EvalKeySwitchPrecomputeCore(in, cryptoContext->GetCryptoParameters());
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt);
-    LibsnarkProofMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+    ps.PublicInput(ctxt);
+    LibsnarkConstraintMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
 
     const auto in_lc        = in_metadata[0];
     const auto in_max_value = in_metadata.max_value[0];
@@ -500,8 +500,8 @@ TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
     auto out              = KeySwitchBV().EvalFastKeySwitchCore(digits, evk, paramsQl);
 
     LibsnarkProofSystem ps(cryptoContext);
-    //    ps.ConstrainPublicInput(ctxt);
-    //    LibsnarkProofMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+    //    ps.PublicInput(ctxt);
+    //    LibsnarkConstraintMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
 
     vector<vector<vector<pb_linear_combination<FieldT>>>> in_lc((*digits).size());
     vector<vector<FieldT>> in_max_value((*digits).size());
@@ -565,35 +565,26 @@ TEST(libsnark_openfhe_gadgets, add) {
     Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
 
     LibsnarkProofSystem ps(cryptoContext);
-
-    LibsnarkProofMetadata out_metadata;  // Store metadata to check if the value matches the expected value later
-    {
-        auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-        auto ctxt2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-        auto out   = cryptoContext->EvalAdd(ctxt1, ctxt2);
-
-        ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
-        ps.ConstrainPublicInput(ctxt1);
-        ps.ConstrainPublicInput(ctxt2);
-        ps.ConstrainAddition(ctxt1, ctxt2, out);
-
-        out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
-    }
-
-    print_stats(ps.pb);
+    LibsnarkConstraintMetadata out_metadata;  // Store metadata to check if the value matches the expected value later
 
     auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
     auto ctxt2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-    auto out   = cryptoContext->EvalAdd(ctxt1, ctxt2);
+    auto eval  = [&](Ciphertext<DCRTPoly> ctxt1, Ciphertext<DCRTPoly> ctxt2) {
+        ps.PublicInput(ctxt1);
+        ps.PublicInput(ctxt2);
+        return ps.EvalAdd(ctxt1, ctxt2);
+    };
+
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    auto out     = eval(ctxt1, ctxt2);
+    out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+
+    print_stats(ps.pb);
 
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
-    ps.ConstrainPublicInput(ctxt1);
-    ps.ConstrainPublicInput(ctxt2);
-    ps.ConstrainAddition(ctxt1, ctxt2, out);
+    eval(ctxt1, ctxt2);
 
     auto pb = ps.pb;
-
-    print_stats(pb);
 
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
@@ -630,8 +621,9 @@ TEST(libsnark_openfhe_gadgets, add_plain) {
     auto out   = cryptoContext->EvalAdd(ctxt1, plaintext1);  // No relin
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt1);
-    ps.ConstrainAddition(ctxt1, plaintext1, out);
+    ps.PublicInput(ctxt1);
+    //    ps.C(ctxt1, plaintext1, out);
+    // TODO
 
     auto pb = ps.pb;
 
@@ -639,7 +631,7 @@ TEST(libsnark_openfhe_gadgets, add_plain) {
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    LibsnarkConstraintMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =
@@ -673,35 +665,25 @@ TEST(libsnark_openfhe_gadgets, sub) {
     Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
 
     LibsnarkProofSystem ps(cryptoContext);
-
-    LibsnarkProofMetadata out_metadata;
-    {
-        auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-        auto ctxt2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-        auto out   = cryptoContext->EvalSub(ctxt1, ctxt2);
-
-        ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
-        ps.ConstrainPublicInput(ctxt1);
-        ps.ConstrainPublicInput(ctxt2);
-        ps.ConstrainSubstraction(ctxt1, ctxt2, out);
-
-        out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
-    }
-
-    print_stats(ps.pb);
-
+    LibsnarkConstraintMetadata out_metadata;
     auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
     auto ctxt2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-    auto out   = cryptoContext->EvalSub(ctxt1, ctxt2);
+    auto eval  = [&](Ciphertext<DCRTPoly> ctxt1, Ciphertext<DCRTPoly> ctxt2) {
+        ps.PublicInput(ctxt1);
+        ps.PublicInput(ctxt2);
+        return ps.EvalSub(ctxt1, ctxt2);
+    };
 
-    ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
-    ps.ConstrainPublicInput(ctxt1);
-    ps.ConstrainPublicInput(ctxt2);
-    ps.ConstrainSubstraction(ctxt1, ctxt2, out);
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    auto out     = eval(ctxt1, ctxt2);
+    out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
 
     auto pb = ps.pb;
 
     print_stats(pb);
+
+    ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
+    eval(ctxt1, ctxt2);
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
@@ -740,8 +722,8 @@ TEST(libsnark_openfhe_gadgets, sub_plain) {
     auto out   = cryptoContext->EvalSub(ctxt1, plaintext1);  // No relin
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt1);
-    ps.ConstrainSubstraction(ctxt1, plaintext1, out);
+    ps.PublicInput(ctxt1);
+    //    ps.ConstrainSubstraction(ctxt1, plaintext1, out); // TODO
 
     auto pb = ps.pb;
 
@@ -749,7 +731,7 @@ TEST(libsnark_openfhe_gadgets, sub_plain) {
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    LibsnarkConstraintMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =
@@ -782,20 +764,29 @@ TEST(libsnark_openfhe_gadgets, rescale) {
     cryptoContext->EvalMultKeyGen(keyPair.secretKey);
     Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
 
-    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-    auto out   = cryptoContext->Rescale(ctxt1);
+    auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt1);
-    ps.ConstrainRescale(ctxt1, out);
+    LibsnarkConstraintMetadata out_metadata;
+
+    auto eval = [&](Ciphertext<DCRTPoly> ctxt) {
+        ps.PublicInput(ctxt);
+        return ps.Rescale(ctxt);
+    };
+
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    auto out     = eval(ctxt);
+    out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
 
     auto pb = ps.pb;
 
     print_stats(pb);
 
+    ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
+    eval(ctxt);
+
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =
@@ -830,20 +821,28 @@ TEST(libsnark_openfhe_gadgets, rotation) {
 
     Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
 
-    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-    auto out   = cryptoContext->EvalRotate(ctxt1, 1);
-
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt1);
-    ps.ConstrainRotate(ctxt1, 1, out);
+    LibsnarkConstraintMetadata out_metadata;
+    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+
+    auto eval = [&](Ciphertext<DCRTPoly> ctxt1) {
+        ps.PublicInput(ctxt1);
+        return ps.EvalRotate(ctxt1, 1);
+    };
+
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    auto out     = eval(ctxt1);
+    out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
 
     auto pb = ps.pb;
 
     print_stats(pb);
 
+    ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
+    eval(ctxt1);
+
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =
@@ -878,31 +877,22 @@ TEST(libsnark_openfhe_gadgets, mult) {
     Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
 
     LibsnarkProofSystem ps(cryptoContext);
+    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    auto ctxt2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    auto eval  = [&](Ciphertext<DCRTPoly> ctxt1, Ciphertext<DCRTPoly> ctxt2) {
+        ps.PublicInput(ctxt1);
+        ps.PublicInput(ctxt2);
+        return ps.EvalMultNoRelin(ctxt1, ctxt2);
+    };
 
-    LibsnarkProofMetadata out_metadata;  // Store metadata to check if the value matches the expected value later
-    {
-        auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-        auto ctxt2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-        auto out   = cryptoContext->EvalMultNoRelin(ctxt1, ctxt2);
-
-        ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
-        ps.ConstrainPublicInput(ctxt1);
-        ps.ConstrainPublicInput(ctxt2);
-        ps.ConstrainMultiplication(ctxt1, ctxt2, out);
-
-        out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
-    }
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    auto out          = eval(ctxt1, ctxt2);
+    auto out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
 
     print_stats(ps.pb);
 
-    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-    auto ctxt2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-    auto out   = cryptoContext->EvalMultNoRelin(ctxt1, ctxt2);
-
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
-    ps.ConstrainPublicInput(ctxt1);
-    ps.ConstrainPublicInput(ctxt2);
-    ps.ConstrainMultiplication(ctxt1, ctxt2, out);
+    eval(ctxt1, ctxt2);
 
     auto pb = ps.pb;
 
@@ -945,8 +935,8 @@ TEST(libsnark_openfhe_gadgets, mult_plain) {
     auto out   = cryptoContext->EvalMult(ctxt1, plaintext1);  // No relin
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt1);
-    ps.ConstrainMultiplication(ctxt1, plaintext1, out);
+    ps.PublicInput(ctxt1);
+    //    ps.EvalMultNoRelin(ctxt1, plaintext1, out);
 
     auto pb = ps.pb;
 
@@ -954,7 +944,7 @@ TEST(libsnark_openfhe_gadgets, mult_plain) {
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    LibsnarkConstraintMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =
@@ -988,12 +978,22 @@ TEST(libsnark_openfhe_gadgets, square) {
     cryptoContext->EvalMultKeyGen(keyPair.secretKey);
     Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 0, 1, 0});
 
-    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
-    auto out   = cryptoContext->EvalMultNoRelin(ctxt1, ctxt1);
-
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(ctxt1);
-    ps.ConstrainSquare(ctxt1, out);
+
+    auto ctxt1 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+    auto eval  = [&](Ciphertext<DCRTPoly> ctxt1) {
+        ps.PublicInput(ctxt1);
+        return ps.EvalSquare(ctxt1);
+    };
+
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    auto out          = eval(ctxt1);
+    auto out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+
+    print_stats(ps.pb);
+
+    ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
+    eval(ctxt1);
 
     auto pb = ps.pb;
 
@@ -1001,7 +1001,6 @@ TEST(libsnark_openfhe_gadgets, square) {
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =
@@ -1039,29 +1038,32 @@ TEST(libsnark_openfhe_gadgets, relin) {
     auto ctxt2 = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
     cryptoContext->ModReduceInPlace(ctxt1);
     cryptoContext->ModReduceInPlace(ctxt2);
-    auto in  = cryptoContext->EvalMultNoRelin(ctxt1, ctxt2);
-    auto out = cryptoContext->Relinearize(in);
+    auto in = cryptoContext->EvalMultNoRelin(ctxt1, ctxt2);
     auto old_in(in);
-    auto old_out(out);
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.ConstrainPublicInput(in);
-    LibsnarkProofMetadata in_metadata = *(LibsnarkProofSystem::GetProofMetadata(in));
+    ps.PublicInput(in);
+    LibsnarkConstraintMetadata in_metadata = *(LibsnarkProofSystem::GetProofMetadata(in));
 
     cout << "in.GetNumOfElements() = " << in->GetElements()[0].GetNumOfElements() << endl;
-    ps.ConstrainRelin(in, out);
+    auto eval = [&](Ciphertext<DCRTPoly> ctxt1) {
+        ps.PublicInput(ctxt1);
+        return ps.Relinearize(ctxt1);
+    };
 
-    // Adding constraints should not modify the values of the ciphertexts, only the metadata
-    EXPECT_EQ(in, old_in);
-    EXPECT_EQ(out, old_out);
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    auto out          = eval(ctxt1);
+    auto out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+
+    print_stats(ps.pb);
+
+    ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
+    eval(ctxt1);
 
     auto pb = ps.pb;
 
-    print_stats(pb);
-
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkProofMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =

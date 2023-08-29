@@ -15,21 +15,29 @@ using std::vector;
 using namespace libsnark;
 typedef libff::Fr<default_r1cs_ppzksnark_pp> FieldT;
 
-enum PROOFSYSTEM_MODE {
-    PROOFSYSTEM_MODE_CONSTRAINT_GENERATION,
-    PROOFSYSTEM_MODE_WITNESS_GENERATION,
+class LibsnarkWitnessMetadata : public Metadata {
+    //    vector<vector<vector<size_t>>> variable_indices;
+public:
+    LibsnarkWitnessMetadata() = default;
+    size_t index_start;
+    std::shared_ptr<protoboard<FieldT>> pb;
+    vector<std::shared_ptr<gadget_gen<FieldT>>> gadgets;
 };
 
-class LibsnarkProofMetadata : public ProofMetadata, private vector<vector<vector<pb_linear_combination<FieldT>>>> {
+class LibsnarkConstraintMetadata : public ProofsystemMetadata,
+                                   private vector<vector<vector<pb_linear_combination<FieldT>>>> {
 public:
+    WireID wire_id;
+    LibsnarkWitnessMetadata witness_metadata;
     vector<size_t> modulus;
     vector<vector<FieldT>> max_value;
 
-    explicit LibsnarkProofMetadata(size_t n = 0)
-        : ProofMetadata(), vector<vector<vector<pb_linear_combination<FieldT>>>>(n), modulus(0), max_value(n) {}
+    explicit LibsnarkConstraintMetadata(size_t n = 0)
+        : ProofsystemMetadata(), vector<vector<vector<pb_linear_combination<FieldT>>>>(n), modulus(0), max_value(n) {}
 
-    explicit LibsnarkProofMetadata(const vector<vector<vector<pb_linear_combination<FieldT>>>>& pb_linear_combinations)
-        : ProofMetadata(),
+    explicit LibsnarkConstraintMetadata(
+        const vector<vector<vector<pb_linear_combination<FieldT>>>>& pb_linear_combinations)
+        : ProofsystemMetadata(),
           vector<vector<vector<pb_linear_combination<FieldT>>>>(pb_linear_combinations),
           modulus(pb_linear_combinations.size()),
           max_value(pb_linear_combinations.size()) {}
@@ -45,92 +53,110 @@ public:
     inline size_t get_bit_size(size_t i, size_t j) const {
         return max_value[i][j].as_bigint().num_bits();
     }
+
+    inline std::tuple<size_t, size_t, size_t> get_dims() const {
+        return std::make_tuple(size(), this[0].size(), this[0][0].size());
+    }
+
+    inline bool matches_dim(const LibsnarkConstraintMetadata& other) const {
+        auto [n1, n2, n3] = get_dims();
+        auto [m1, m2, m3] = other.get_dims();
+        return (n1 == m1) && (n2 == m2) && (n3 == m3);
+    }
 };
+const std::string LibsnarkConstraintMetadata::ProofsystemMetadata::key = std::string("libsnark_proof_metadata");
 
-using LibsnarkConstraintMetadata = LibsnarkProofMetadata;
-
-class LibsnarkWitnessMetadata : public Metadata {
-    //    vector<vector<vector<size_t>>> variable_indices;
-public:
-    size_t index_start;
-    std::shared_ptr<protoboard<FieldT>> pb;
-    vector<std::shared_ptr<gadget_gen<FieldT>>> gadgets;
-};
-
-using WireID = std::string;
-
-class WireIdMetadata : public Metadata {
-public:
-    const WireID wire_id;
-
-    WireIdMetadata(const WireID& wireId) : wire_id(wireId) {}
-};
-
-class LibsnarkProofSystem : ProofSystem {
+class LibsnarkProofSystem : public ProofSystem<DCRTPoly, LibsnarkConstraintMetadata> {
 protected:
-    void constrain_addmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
-                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
-    void constrain_submod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
-                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
-    void constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, size_t index_1, const LibsnarkProofMetadata& in2,
-                               size_t index_2, LibsnarkProofMetadata& out, size_t index_out);
+    vector<std::shared_ptr<gadget_gen<FieldT>>> constrain_addmod_lazy(const LibsnarkConstraintMetadata& in1,
+                                                                      size_t index_1,
+                                                                      const LibsnarkConstraintMetadata& in2,
+                                                                      size_t index_2, LibsnarkConstraintMetadata& out,
+                                                                      size_t index_out);
+    void constrain_addmod_lazy(const LibsnarkConstraintMetadata& in1, size_t index_1,
+                               const LibsnarkConstraintMetadata& in2, size_t index_2, LibsnarkConstraintMetadata& out,
+                               size_t index_out, vector<std::shared_ptr<gadget_gen<FieldT>>>& gadgets_append);
+    void constrain_submod_lazy(const LibsnarkConstraintMetadata& in1, size_t index_1,
+                               const LibsnarkConstraintMetadata& in2, size_t index_2, LibsnarkConstraintMetadata& out,
+                               size_t index_out);
+    vector<std::shared_ptr<gadget_gen<FieldT>>> constrain_mulmod_lazy(const LibsnarkConstraintMetadata& in1,
+                                                                      size_t index_1,
+                                                                      const LibsnarkConstraintMetadata& in2,
+                                                                      size_t index_2, LibsnarkConstraintMetadata& out,
+                                                                      size_t index_out);
+    void constrain_mulmod_lazy(const LibsnarkConstraintMetadata& in1, size_t index_1,
+                               const LibsnarkConstraintMetadata& in2, size_t index_2, LibsnarkConstraintMetadata& out,
+                               size_t index_out, vector<std::shared_ptr<gadget_gen<FieldT>>>& gadgets_append);
     std::unordered_map<WireID, LibsnarkWitnessMetadata> wire_metadata;
-    static size_t global_wire_id;
 
 public:
     protoboard<FieldT> pb;
-    const CryptoContext<DCRTPoly> cryptoContext;
-    PROOFSYSTEM_MODE mode;
 
-    explicit LibsnarkProofSystem(const CryptoContext<DCRTPoly>& cryptoContext) : cryptoContext(cryptoContext) {
+    explicit LibsnarkProofSystem(const CryptoContext<DCRTPoly>& cc)
+        : ProofSystem<DCRTPoly, LibsnarkConstraintMetadata>(cc) {
         default_r1cs_ppzksnark_pp::init_public_params();
     }
 
-    void SetMode(PROOFSYSTEM_MODE mode) {
-        this->mode           = mode;
-        this->global_wire_id = 0;
+    void SetMode(PROOFSYSTEM_MODE mode) override {
+        ProofSystem<DCRTPoly, LibsnarkConstraintMetadata>::SetMode(mode);
+        LibsnarkProofSystem::ProofSystem::global_wire_id = 0;
         if (mode == PROOFSYSTEM_MODE_CONSTRAINT_GENERATION) {
             pb = protoboard<FieldT>();
         }
     }
 
-    static size_t get_next_wire_id() {
-        return global_wire_id++;
-    }
+    std::shared_ptr<LibsnarkConstraintMetadata> ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext);
 
-    void ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext) override;
-    void GenConstraintPublicInput(const Ciphertext<DCRTPoly>& ciphertext);
-    void GenWitnessPublicInput(Ciphertext<DCRTPoly>& ciphertext);
+    LibsnarkConstraintMetadata PublicInputConstraint(ConstCiphertext<DCRTPoly> ciphertext) override;
+    void PublicInputWitness(ConstCiphertext<DCRTPoly> ciphertext) override;
 
-    std::shared_ptr<LibsnarkProofMetadata> ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext);
-    void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                           Ciphertext<DCRTPoly>& ctxt_out) override;
-    void GenConstraintAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                               Ciphertext<DCRTPoly>& ctxt_out);
-    void GenWitnessAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                            Ciphertext<DCRTPoly>& ctxt_out);
+    LibsnarkConstraintMetadata EvalAddConstraint(const LibsnarkConstraintMetadata& m1,
+                                                 const LibsnarkConstraintMetadata& m2) override;
+    void EvalAddWitness(ConstCiphertext<DCRTPoly> ciphertext1, ConstCiphertext<DCRTPoly> ciphertext2,
+                        ConstCiphertext<DCRTPoly> ciphertext_out) override;
 
-    void ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt, const Plaintext& ptxt, Ciphertext<DCRTPoly>& ctxt_out);
+    LibsnarkConstraintMetadata EvalSubConstraint(const LibsnarkConstraintMetadata& m1,
+                                                 const LibsnarkConstraintMetadata& m2) override;
+    void EvalSubWitness(ConstCiphertext<DCRTPoly> ciphertext1, ConstCiphertext<DCRTPoly> ciphertext2,
+                        ConstCiphertext<DCRTPoly> ciphertext_out) override;
 
-    void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                               Ciphertext<DCRTPoly>& ctxt_out) override;
-    void GenConstraintSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                   Ciphertext<DCRTPoly>& ctxt_out);
-    void GenWitnessSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                Ciphertext<DCRTPoly>& ctxt_out);
+    LibsnarkConstraintMetadata EvalMultNoRelinConstraint(const LibsnarkConstraintMetadata& m1,
+                                                         const LibsnarkConstraintMetadata& m2) override;
+    void EvalMultNoRelinWitness(ConstCiphertext<DCRTPoly> ciphertext1, ConstCiphertext<DCRTPoly> ciphertext2,
+                                ConstCiphertext<DCRTPoly> ciphertext_out) override;
 
-    void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                 Ciphertext<DCRTPoly>& ctxt_out) override;
-    void GenConstraintMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                     Ciphertext<DCRTPoly>& ctxt_out);
-    void GenWitnessMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                  Ciphertext<DCRTPoly>& ctxt_out);
+    LibsnarkConstraintMetadata EvalSquareConstraint(const LibsnarkConstraintMetadata& m) override;
+    void EvalSquareWitness(ConstCiphertext<DCRTPoly> ciphertext, ConstCiphertext<DCRTPoly> ciphertext_out) override;
 
-    void ConstrainSquare(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
+    LibsnarkConstraintMetadata RescaleConstraint(ConstCiphertext<DCRTPoly> ctxt_in,
+                                                 const LibsnarkConstraintMetadata& m) override;
+    void RescaleWitness(ConstCiphertext<DCRTPoly> ciphertext, ConstCiphertext<DCRTPoly> ciphertext_out) override;
 
-    void ConstrainSquare2(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
+    LibsnarkConstraintMetadata EvalRotateConstraint(ConstCiphertext<DCRTPoly> ciphertext, int rot_idx,
+                                                    ConstCiphertext<DCRTPoly> ctxt_out) override;
+    void EvalRotateWitness(ConstCiphertext<DCRTPoly> ciphertext, int rot_idx,
+                           ConstCiphertext<DCRTPoly> ctxt_out) override;
 
-    void ConstrainRescale(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
+    LibsnarkConstraintMetadata RelinearizeConstraint(ConstCiphertext<DCRTPoly> ctxt_in) override;
+    void RelinearizeWitness(ConstCiphertext<DCRTPoly> ciphertext, ConstCiphertext<DCRTPoly> ciphertext_out) override;
+
+    LibsnarkConstraintMetadata KeySwitchConstraint(ConstCiphertext<DCRTPoly> ctxt_in, const EvalKey<DCRTPoly>& ek,
+                                                   ConstCiphertext<DCRTPoly> ctxt_out) override;
+    void KeySwitchWitness(ConstCiphertext<DCRTPoly> ctxt_in, const EvalKey<DCRTPoly>& ek,
+                          ConstCiphertext<DCRTPoly>& ctxt_out) override;
+
+    void EncryptWitness(Plaintext plaintext, PublicKey<DCRTPoly> publicKey,
+                        ConstCiphertext<DCRTPoly> ciphertext) override;
+    void EncryptConstraint(Plaintext plaintext, DoublePublicKey<DCRTPoly> publicKey,
+                           DoubleCiphertext<DCRTPoly> ciphertext) override;
+    void EncryptWitness(Plaintext plaintext, DoublePublicKey<DCRTPoly> publicKey,
+                        DoubleCiphertext<DCRTPoly> ciphertext) override;
+
+    LibsnarkConstraintMetadata EncryptConstraint(Plaintext plaintext, PublicKey<DCRTPoly> publicKey) override;
+
+    void ConstrainSquare2(ConstCiphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
+
+    void ConstrainRescale(ConstCiphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
 
     void ConstrainSetFormat(Format format, const DCRTPoly::PolyType& in, const DCRTPoly::PolyType& out,
                             const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
@@ -193,37 +219,27 @@ public:
                                     vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                     vector<vector<FieldT>>& out_max_value);
 
-    void ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext, Ciphertext<DCRTPoly>& out);
 
-    void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const ProofMetadata& vars) override {
-        FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkProofMetadata&>(vars));
-    }
+    //    void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkConstraintMetadata& vars) override {
+    //        FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkConstraintMetadata&>(vars));
+    //    }
 
-    void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkProofMetadata& out_vars);
+    void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkConstraintMetadata& out_vars) override;
 
-    static std::shared_ptr<LibsnarkProofMetadata> GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext);
+//    static std::shared_ptr<LibsnarkConstraintMetadata> GetProofMetadata(ConstCiphertext<DCRTPoly>& ciphertext);
+//    static std::shared_ptr<LibsnarkConstraintMetadata> GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext);
+//    static void SetProofMetadata(Ciphertext<DCRTPoly>& ciphertext,
+//                                 const std::shared_ptr<LibsnarkConstraintMetadata>& metadata);
 
-    static void SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext,
-                                 const std::shared_ptr<LibsnarkProofMetadata>& metadata);
+    void ConstrainSubstraction(ConstCiphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt, Ciphertext<DCRTPoly>& ctxt_out);
 
-    void ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt2,
-                                 Ciphertext<DCRTPoly>& ctxt_out);
-
-    void ConstrainRotate(const Ciphertext<DCRTPoly>& ciphertext, int rot_idx, Ciphertext<DCRTPoly>& ctxt_out);
-    void ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt,
-                               Ciphertext<DCRTPoly>& ctxt_out);
-
-    void ConstrainKeySwitch(const Ciphertext<DCRTPoly>& ctxt_i, const EvalKey<DCRTPoly>& evalKey,
+    void ConstrainKeySwitch(ConstCiphertext<DCRTPoly>& ctxt_i, const EvalKey<DCRTPoly>& evalKey,
                             Ciphertext<DCRTPoly>& ctxt_out);
     void ConstrainNTTOpt(const intnat::NativeVectorT<NativeInteger>& rootOfUnityTable,
                          const intnat::NativeVectorT<NativeInteger>& preconRootOfUnityTable,
                          const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
                          const vector<FieldT>& in_lc, const FieldT& in_max_value, vector<FieldT>& out_lc,
                          FieldT& out_max_value);
-    WireID GetWireID(const Ciphertext<DCRTPoly>& ciphertext);
-    void SetWireId(const Ciphertext<DCRTPoly>& ciphertext, const WireID& wire_id);
 };
-
-size_t LibsnarkProofSystem::global_wire_id = 0;
 
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H

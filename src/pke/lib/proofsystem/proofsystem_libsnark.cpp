@@ -9,11 +9,9 @@
 #include "scheme/bgvrns/cryptocontext-bgvrns.h"
 
 #include <vector>
+#include <optional>
 #undef NDEBUG
 #include <cassert>
-
-#define LIBSNARK_PROOF_METADATA_KEY  "libsnark_proof_metadata"
-#define LIBSNARK_WIREID_METADATA_KEY "libsnark_wire_id"
 
 using namespace libsnark;
 using std::cout, std::endl;
@@ -24,12 +22,12 @@ FieldT get_max_field_element(const vector<FieldT>& vec) {
     return *it;
 }
 
-std::tuple<size_t, size_t, size_t> get_dims(const Ciphertext<DCRTPoly>& ciphertext) {
+std::tuple<size_t, size_t, size_t> get_dims(ConstCiphertext<DCRTPoly> ciphertext) {
     return std::make_tuple(ciphertext->GetElements().size(), ciphertext->GetElements()[0].GetNumOfElements(),
                            ciphertext->GetElements()[0].GetElementAtIndex(0).GetLength());
 }
 
-bool matches_dim(const Ciphertext<DCRTPoly>& ciphertext, const size_t num_polys, const size_t num_limbs,
+bool matches_dim(ConstCiphertext<DCRTPoly> ciphertext, const size_t num_polys, const size_t num_limbs,
                  const size_t num_coeffs) {
     const auto dims = get_dims(ciphertext);
     return std::get<0>(dims) == num_polys && std::get<1>(dims) == num_limbs && std::get<2>(dims) == num_coeffs;
@@ -41,117 +39,34 @@ bool matches_dim(const vector<vector<vector<T>>>& vec, const size_t num_polys, c
     return vec.size() == num_polys && vec[0].size() == num_limbs && vec[0][0].size() == num_coeffs;
 }
 
-std::shared_ptr<LibsnarkProofMetadata> LibsnarkProofSystem::GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext) {
-    auto it = ciphertext->FindMetadataByKey(LIBSNARK_PROOF_METADATA_KEY);
-    if (ciphertext->MetadataFound(it)) {
-        return std::dynamic_pointer_cast<LibsnarkProofMetadata>(ciphertext->GetMetadata(it));
-    }
-    else {
-        OPENFHE_THROW(openfhe_error, "Attempt to access metadata (LibsnarkProofMetadata) that has not been set.");
-    }
-}
+//std::shared_ptr<LibsnarkConstraintMetadata> LibsnarkProofSystem::GetProofMetadata(ConstCiphertext<DCRTPoly>ciphertext) {
+//    auto it = ciphertext->FindMetadataByKey(LIBSNARK_PROOF_METADATA_KEY);
+//    if (ciphertext->MetadataFound(it)) {
+//        return std::dynamic_pointer_cast<LibsnarkConstraintMetadata>(ciphertext->GetMetadata(it));
+//    }
+//    else {
+//        OPENFHE_THROW(openfhe_error, "Attempt to access metadata (LibsnarkConstraintMetadata) that has not been set.");
+//    }
+//}
+//
+//std::shared_ptr<LibsnarkConstraintMetadata> LibsnarkProofSystem::GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext) {
+//    auto it = ciphertext->FindMetadataByKey(LIBSNARK_PROOF_METADATA_KEY);
+//    if (ciphertext->MetadataFound(it)) {
+//        return std::dynamic_pointer_cast<LibsnarkConstraintMetadata>(ciphertext->GetMetadata(it));
+//    }
+//    else {
+//        OPENFHE_THROW(openfhe_error, "Attempt to access metadata (LibsnarkConstraintMetadata) that has not been set.");
+//    }
+//}
+//
+//void LibsnarkProofSystem::SetProofMetadata(Ciphertext<DCRTPoly>& ciphertext,
+//                                           const std::shared_ptr<LibsnarkConstraintMetadata>& metadata) {
+//    ciphertext->SetMetadataByKey(LIBSNARK_PROOF_METADATA_KEY, metadata);
+//}
 
-void LibsnarkProofSystem::SetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext,
-                                           const std::shared_ptr<LibsnarkProofMetadata>& metadata) {
-    ciphertext->SetMetadataByKey(LIBSNARK_PROOF_METADATA_KEY, metadata);
-}
-
-WireID LibsnarkProofSystem::GetWireID(const Ciphertext<DCRTPoly>& ciphertext) {
-    auto it = ciphertext->FindMetadataByKey(LIBSNARK_WIREID_METADATA_KEY);
-    if (ciphertext->MetadataFound(it)) {
-        auto res = std::dynamic_pointer_cast<WireIdMetadata>(ciphertext->GetMetadata(it));
-        return res->wire_id;
-    }
-    else {
-        OPENFHE_THROW(openfhe_error, "Attempt to access metadata (WireIdMetadata) that has not been set.");
-    }
-}
-
-void LibsnarkProofSystem::SetWireId(const Ciphertext<DCRTPoly>& ciphertext, const WireID& wire_id) {
-    ciphertext->SetMetadataByKey(LIBSNARK_WIREID_METADATA_KEY,
-                                 std::make_shared<WireIdMetadata>(WireIdMetadata(wire_id)));
-}
-
-void LibsnarkProofSystem::GenConstraintPublicInput(const Ciphertext<DCRTPoly>& ciphertext) {
-    const auto wire_id = GetWireID(ciphertext);
-
-    const auto [num_polys, num_limbs, num_coeffs] = get_dims(ciphertext);
-
-    vector<size_t> moduli(num_limbs);
-    for (size_t j = 0; j < num_limbs; j++) {
-        moduli[j] = ciphertext->GetElements()[0].GetElementAtIndex(j).GetModulus().ConvertToInt<size_t>();
-    }
-
-    LibsnarkProofMetadata out(num_polys);
-    out.max_value = vector<vector<FieldT>>(num_polys);
-    out.modulus   = moduli;
-
-    size_t first_var_index;
-
-    for (size_t i = 0; i < num_polys; i++) {
-        out[i].resize(num_limbs);
-        out.max_value[i].resize(num_limbs);
-        for (size_t j = 0; j < num_limbs; j++) {
-            out[i][j].resize(num_coeffs);
-            out.max_value[i][j] = FieldT(moduli[j]) - 1;
-            for (size_t k = 0; k < num_coeffs; k++) {
-                pb_variable<FieldT> tmp;
-                tmp.allocate(pb, "ctxt_input[" + std::to_string(i) + "][" + std::to_string(j) + "][" +
-                                     std::to_string(k) + "] (input)");
-
-                if (i == 0 && j == 0 && k == 0) {
-                    first_var_index = tmp.index;
-                }
-                out[i][j][k] = pb_linear_combination<FieldT>(tmp);
-            }
-        }
-    }
-
-    pb.set_input_sizes(pb.num_inputs() + num_polys * num_limbs * num_coeffs);
-
-    SetProofMetadata(ciphertext, std::make_shared<LibsnarkProofMetadata>(out));
-
-    LibsnarkWitnessMetadata witnessMetadata;
-    witnessMetadata.index_start = first_var_index;
-    wire_metadata[wire_id]      = std::move(witnessMetadata);
-}
-
-void LibsnarkProofSystem::GenWitnessPublicInput(Ciphertext<DCRTPoly>& ciphertext) {
-    const auto wire_id         = GetWireID(ciphertext);
-    const auto witnessMetadata = wire_metadata.at(wire_id);
-
-    const auto [num_polys, num_limbs, num_coeffs] = get_dims(ciphertext);
-
-    for (size_t i = 0; i < num_polys; i++) {
-        const auto c_i = ciphertext->GetElements()[i];
-        for (size_t j = 0; j < num_polys; j++) {
-            const auto c_ij  = c_i.GetElementAtIndex(j);
-            const auto& v_ij = c_ij.GetValues();
-            for (size_t k = 0; k < num_coeffs; k++) {
-                size_t curr_index = witnessMetadata.index_start + (i * num_limbs * num_coeffs) + (j * num_coeffs) + k;
-                pb.val(pb_variable<FieldT>(curr_index)) = FieldT(v_ij[k].ConvertToInt<unsigned long>());
-            }
-        }
-    }
-}
-
-void LibsnarkProofSystem::ConstrainPublicInput(Ciphertext<DCRTPoly>& ciphertext) {
-    SetWireId(ciphertext, "PublicCtxt(" + std::to_string(get_next_wire_id()) + ")");
-    switch (mode) {
-        case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
-            GenConstraintPublicInput(ciphertext);
-            break;
-        case PROOFSYSTEM_MODE_WITNESS_GENERATION:
-            GenWitnessPublicInput(ciphertext);
-            break;
-        default:
-            throw std::logic_error("Unhandled mode: " + std::to_string(mode));
-    }
-}
-
-void LibsnarkProofSystem::constrain_addmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1,
-                                                const LibsnarkProofMetadata& in2, const size_t index_2,
-                                                LibsnarkProofMetadata& out, const size_t index_out) {
+vector<std::shared_ptr<gadget_gen<FieldT>>> LibsnarkProofSystem::constrain_addmod_lazy(
+    const LibsnarkConstraintMetadata& in1, size_t index_1, const LibsnarkConstraintMetadata& in2, size_t index_2,
+    LibsnarkConstraintMetadata& out, size_t index_out) {
     assert(index_1 < in1.size());
     assert(index_2 < in2.size());
     assert(index_out < out.size());
@@ -161,6 +76,8 @@ void LibsnarkProofSystem::constrain_addmod_lazy(const LibsnarkProofMetadata& in1
     auto modulus = in1.modulus;
     assert(in2.modulus == modulus);
     assert(out.modulus == modulus && "modulus of `out' is not set");
+
+    vector<std::shared_ptr<gadget_gen<FieldT>>> all_gadgets;
 
     vector<FieldT> out_max_value(num_limbs);
     vector<bool> field_overflow(num_limbs);
@@ -178,6 +95,8 @@ void LibsnarkProofSystem::constrain_addmod_lazy(const LibsnarkProofMetadata& in1
             g.generate_r1cs_witness();
             out[index_out][j]           = g.get_output();
             out.max_value[index_out][j] = FieldT(modulus[j]) - 1;
+
+            all_gadgets.push_back(std::make_shared<BatchGadget<FieldT, AddModGadget<FieldT>>>(g));
         }
         else {
             // Lazy branch, do not add modulus constraints, but track size of values for later
@@ -190,9 +109,18 @@ void LibsnarkProofSystem::constrain_addmod_lazy(const LibsnarkProofMetadata& in1
     }
 }
 
-void LibsnarkProofSystem::constrain_submod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1,
-                                                const LibsnarkProofMetadata& in2, const size_t index_2,
-                                                LibsnarkProofMetadata& out, const size_t index_out) {
+void LibsnarkProofSystem::constrain_addmod_lazy(const LibsnarkConstraintMetadata& in1, const size_t index_1,
+                                                const LibsnarkConstraintMetadata& in2, const size_t index_2,
+                                                LibsnarkConstraintMetadata& out, const size_t index_out,
+                                                vector<std::shared_ptr<gadget_gen<FieldT>>>& gadgets_append) {
+    auto to_append = constrain_addmod_lazy(in1, index_1, in2, index_2, out, index_out);
+    gadgets_append.insert(gadgets_append.end(), std::make_move_iterator(to_append.begin()),
+                          std::make_move_iterator(to_append.end()));
+}
+
+void LibsnarkProofSystem::constrain_submod_lazy(const LibsnarkConstraintMetadata& in1, const size_t index_1,
+                                                const LibsnarkConstraintMetadata& in2, const size_t index_2,
+                                                LibsnarkConstraintMetadata& out, const size_t index_out) {
     assert(index_1 < in1.size());
     assert(index_2 < in2.size());
     assert(index_out < out.size());
@@ -253,9 +181,66 @@ void LibsnarkProofSystem::constrain_submod_lazy(const LibsnarkProofMetadata& in1
     }
 }
 
-void LibsnarkProofSystem::constrain_mulmod_lazy(const LibsnarkProofMetadata& in1, const size_t index_1,
-                                                const LibsnarkProofMetadata& in2, const size_t index_2,
-                                                LibsnarkProofMetadata& out, const size_t index_out) {
+vector<std::shared_ptr<gadget_gen<FieldT>>> constrain_mulmod_lazy(
+    protoboard<FieldT>& pb, const vector<vector<pb_linear_combination<FieldT>>>& in1,
+    const vector<FieldT>& in1_max_value, const vector<vector<pb_linear_combination<FieldT>>>& in2,
+    const vector<FieldT>& in2_max_value, const vector<size_t>& modulus,
+    vector<vector<pb_linear_combination<FieldT>>>& out, vector<FieldT>& out_max_value) {
+    auto num_limbs = in1.size();
+    assert(in2.size() == num_limbs);
+
+    out.resize(num_limbs);
+    out_max_value.resize(num_limbs);
+
+    vector<std::shared_ptr<gadget_gen<FieldT>>> gadgets_append;
+
+    vector<bool> field_overflow(num_limbs);
+    for (size_t j = 0; j < num_limbs; ++j) {
+        size_t out_bit_size = in1_max_value[j].as_bigint().num_bits() + in2_max_value[j].as_bigint().num_bits();
+        out_max_value[j]    = in1_max_value[j] * in2_max_value[j];
+        field_overflow[j]   = out_bit_size >= FieldT::num_bits;
+
+        if (field_overflow[j]) {
+            // Eager witness generation, add modulus constraints
+            auto g = BatchGadget<FieldT, MulModGadget<FieldT>>(pb, in1[j], in1_max_value[j], in2[j], in2_max_value[j],
+                                                               modulus[j]);
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            out[j]           = g.get_output();
+            out_max_value[j] = FieldT(modulus[j]) - 1;
+
+            gadgets_append.push_back(std::make_shared<BatchGadget<FieldT, MulModGadget<FieldT>>>(g));
+        }
+        else {
+            // Lazy branch, only add quadratic constraint for multiplication without mod-reduction
+            auto g = BatchGadget<FieldT, MulGadget<FieldT>>(pb, in1[j], in2[j]);
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            //            auto x  = g.get_output();
+            //            auto oi = out[index_out].at(j) = x;
+            out[j]           = g.get_output();
+            out_max_value[j] = out_max_value[j];
+
+            gadgets_append.push_back(std::make_shared<BatchGadget<FieldT, MulGadget<FieldT>>>(g));
+        }
+    }
+    return gadgets_append;
+}
+
+void constrain_mulmod_lazy(protoboard<FieldT>& pb, const vector<vector<pb_linear_combination<FieldT>>>& in1,
+                           const vector<FieldT>& in1_max_value,
+                           const vector<vector<pb_linear_combination<FieldT>>>& in2,
+                           const vector<FieldT>& in2_max_value, const vector<size_t>& modulus,
+                           vector<vector<pb_linear_combination<FieldT>>>& out, vector<FieldT>& out_max_value,
+                           vector<std::shared_ptr<gadget_gen<FieldT>>>& gadgets_append) {
+    auto to_append = constrain_mulmod_lazy(pb, in1, in1_max_value, in2, in2_max_value, modulus, out, out_max_value);
+    gadgets_append.insert(gadgets_append.end(), std::make_move_iterator(to_append.begin()),
+                          std::make_move_iterator(to_append.end()));
+}
+
+vector<std::shared_ptr<gadget_gen<FieldT>>> LibsnarkProofSystem::constrain_mulmod_lazy(
+    const LibsnarkConstraintMetadata& in1, const size_t index_1, const LibsnarkConstraintMetadata& in2,
+    const size_t index_2, LibsnarkConstraintMetadata& out, const size_t index_out) {
     assert(index_1 < in1.size());
     assert(index_1 < in1.max_value.size());
     assert(index_2 < in2.size());
@@ -268,57 +253,90 @@ void LibsnarkProofSystem::constrain_mulmod_lazy(const LibsnarkProofMetadata& in1
     assert(in2.modulus == modulus);
     assert(out.modulus == modulus && "modulus of `out' is not set");
 
-    out[index_out].resize(num_limbs);  // assert(out[index_out].size() == num_limbs);
+    return ::constrain_mulmod_lazy(pb, in1[index_1], in1.max_value[index_1], in2[index_2], in2.max_value[index_2],
+                                   modulus, out[index_out], out.max_value[index_out]);
+}
 
-    vector<FieldT> out_max_value(num_limbs);
-    vector<bool> field_overflow(num_limbs);
-    out.max_value[index_out] = vector<FieldT>(num_limbs);
-    for (size_t j = 0; j < num_limbs; ++j) {
-        size_t out_bit_size = in1.get_bit_size(index_1, j) + in2.get_bit_size(index_2, j);
-        out_max_value[j]    = in1.max_value[index_1][j] * in2.max_value[index_2][j];
-        field_overflow[j]   = out_bit_size >= FieldT::num_bits;
+void LibsnarkProofSystem::constrain_mulmod_lazy(const LibsnarkConstraintMetadata& in1, const size_t index_1,
+                                                const LibsnarkConstraintMetadata& in2, const size_t index_2,
+                                                LibsnarkConstraintMetadata& out, const size_t index_out,
+                                                vector<std::shared_ptr<gadget_gen<FieldT>>>& gadgets_append) {
+    auto to_append = constrain_mulmod_lazy(in1, index_1, in2, index_2, out, index_out);
+    gadgets_append.insert(gadgets_append.end(), std::make_move_iterator(to_append.begin()),
+                          std::make_move_iterator(to_append.end()));
+}
 
-        if (field_overflow[j]) {
-            // Eager witness generation, add modulus constraints
-            auto g = BatchGadget<FieldT, MulModGadget<FieldT>>(pb, in1[index_1][j], in1.max_value[index_1][j],
-                                                               in2[index_2][j], in2.max_value[index_2][j], modulus[j]);
-            g.generate_r1cs_constraints();
-            g.generate_r1cs_witness();
-            out[index_out][j]           = g.get_output();
-            out.max_value[index_out][j] = FieldT(modulus[j]) - 1;
+LibsnarkConstraintMetadata LibsnarkProofSystem::PublicInputConstraint(ConstCiphertext<DCRTPoly> ciphertext) {
+    const auto wire_id = GetWireId(ciphertext);
+
+    const auto [num_polys, num_limbs, num_coeffs] = get_dims(ciphertext);
+
+    vector<size_t> moduli(num_limbs);
+    for (size_t j = 0; j < num_limbs; j++) {
+        moduli[j] = ciphertext->GetElements()[0].GetElementAtIndex(j).GetModulus().ConvertToInt<size_t>();
+    }
+
+    LibsnarkConstraintMetadata out(num_polys);
+    out.max_value = vector<vector<FieldT>>(num_polys);
+    out.modulus   = moduli;
+
+    size_t first_var_index;
+
+    for (size_t i = 0; i < num_polys; i++) {
+        out[i].resize(num_limbs);
+        out.max_value[i].resize(num_limbs);
+        for (size_t j = 0; j < num_limbs; j++) {
+            out[i][j].resize(num_coeffs);
+            out.max_value[i][j] = FieldT(moduli[j]) - 1;
+            for (size_t k = 0; k < num_coeffs; k++) {
+                pb_variable<FieldT> tmp;
+                tmp.allocate(pb, "ctxt_input[" + std::to_string(i) + "][" + std::to_string(j) + "][" +
+                                     std::to_string(k) + "] (input)");
+
+                if (i == 0 && j == 0 && k == 0) {
+                    first_var_index = tmp.index;
+                }
+                out[i][j][k] = pb_linear_combination<FieldT>(tmp);
+            }
         }
-        else {
-            // Lazy branch, only add quadratic constraint for multiplication without mod-reduction
-            auto g = BatchGadget<FieldT, MulGadget<FieldT>>(pb, in1[index_1][j], in2[index_2][j]);
-            g.generate_r1cs_constraints();
-            g.generate_r1cs_witness();
-            //            auto x  = g.get_output();
-            //            auto oi = out[index_out].at(j) = x;
-            out[index_out][j]           = g.get_output();
-            out.max_value[index_out][j] = out_max_value[j];
+    }
+
+    pb.set_input_sizes(pb.num_inputs() + num_polys * num_limbs * num_coeffs);
+
+    LibsnarkWitnessMetadata witnessMetadata;
+    witnessMetadata.index_start = first_var_index;
+    wire_metadata[wire_id]      = std::move(witnessMetadata);
+
+    return out;
+}
+
+void LibsnarkProofSystem::PublicInputWitness(ConstCiphertext<DCRTPoly> ciphertext) {
+    const auto wire_id         = GetWireId(ciphertext);
+    const auto witnessMetadata = wire_metadata.at(wire_id);
+
+    const auto [num_polys, num_limbs, num_coeffs] = get_dims(ciphertext);
+
+    for (size_t i = 0; i < num_polys; i++) {
+        const auto c_i = ciphertext->GetElements()[i];
+        for (size_t j = 0; j < num_polys; j++) {
+            const auto c_ij  = c_i.GetElementAtIndex(j);
+            const auto& v_ij = c_ij.GetValues();
+            for (size_t k = 0; k < num_coeffs; k++) {
+                size_t curr_index = witnessMetadata.index_start + (i * num_limbs * num_coeffs) + (j * num_coeffs) + k;
+                pb.val(pb_variable<FieldT>(curr_index)) = FieldT(v_ij[k].ConvertToInt<unsigned long>());
+            }
         }
     }
 }
 
-void LibsnarkProofSystem::GenConstraintAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                                Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto wire_id = GetWireID(ctxt_out);
-
-    const auto in1 = *GetProofMetadata(ctxt1);
-    const auto in2 = *GetProofMetadata(ctxt2);
-
-    vector<unsigned long> moduli;
-    for (const auto& e : ctxt_out->GetElements()[0].GetAllElements()) {
-        moduli.push_back(e.GetModulus().ConvertToInt());
-    }
-    assert(in1.size() == in2.size());
+LibsnarkConstraintMetadata LibsnarkProofSystem::EvalAddConstraint(const LibsnarkConstraintMetadata& in1,
+                                                                  const LibsnarkConstraintMetadata& in2) {
+    assert(in1.matches_dim(in2));
     assert(in1.modulus == in2.modulus);
-    assert(in1.modulus == moduli);
 
-    const auto [num_polys, num_limbs, num_coeffs] = get_dims(ctxt1);
-    assert(matches_dim(ctxt2, num_polys, num_limbs, num_coeffs));
+    const auto [num_polys, num_limbs, num_coeffs] = in1.get_dims();
 
-    LibsnarkProofMetadata out(num_polys);
+    LibsnarkConstraintMetadata out(num_polys);
     out.max_value.resize(num_polys);
     out.modulus = in1.modulus;
 
@@ -331,7 +349,7 @@ void LibsnarkProofSystem::GenConstraintAddition(const Ciphertext<DCRTPoly>& ctxt
             out[i][j].resize(num_coeffs);
             for (size_t k = 0; k < num_coeffs; k++) {
                 LazyAddModGadget<FieldT> g_add(pb, in1[i][j][k], in1.max_value[i][j], in2[i][j][k], in2.max_value[i][j],
-                                               moduli[j]);
+                                               out.modulus[j]);
 
                 g_add.generate_r1cs_constraints();
                 out[i][j][k] = g_add.out;
@@ -339,17 +357,18 @@ void LibsnarkProofSystem::GenConstraintAddition(const Ciphertext<DCRTPoly>& ctxt
                     out.max_value[i][j] = g_add.out_max_value;
                 }
 
-                witnessMetadata.gadgets.push_back(std::make_shared<LazyAddModGadget<FieldT>>(std::move(g_add)));
+                witnessMetadata.gadgets.push_back(std::make_shared<LazyAddModGadget<FieldT>>(g_add));
             }
         }
     }
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
-    wire_metadata[wire_id] = std::move(witnessMetadata);
+
+    out.witness_metadata = std::move(witnessMetadata);
+    return out;
 }
 
-void LibsnarkProofSystem::GenWitnessAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                             Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto wire_id         = GetWireID(ctxt_out);
+void LibsnarkProofSystem::EvalAddWitness(ConstCiphertext<DCRTPoly> ctxt1, ConstCiphertext<DCRTPoly> ctxt2,
+                                         ConstCiphertext<DCRTPoly> ctxt_out) {
+    const auto wire_id         = GetWireId(ctxt_out);
     const auto witnessMetadata = wire_metadata.at(wire_id);
 
     for (const auto& g : witnessMetadata.gadgets) {
@@ -357,103 +376,77 @@ void LibsnarkProofSystem::GenWitnessAddition(const Ciphertext<DCRTPoly>& ctxt1, 
     }
 }
 
-void LibsnarkProofSystem::ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                            Ciphertext<DCRTPoly>& ctxt_out) {
-    SetWireId(ctxt_out, "Add(" + GetWireID(ctxt1) + ", " + GetWireID(ctxt2) + ")");
-    switch (mode) {
-        case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
-            GenConstraintAddition(ctxt1, ctxt2, ctxt_out);
-            break;
-        case PROOFSYSTEM_MODE_WITNESS_GENERATION:
-            GenWitnessAddition(ctxt1, ctxt2, ctxt_out);
-            break;
-        default:
-            throw std::logic_error("Unhandled mode: " + std::to_string(mode));
-    }
-}
+//LibsnarkConstraintMetadata LibsnarkProofSystem::EvalAdd(ConstCiphertext<DCRTPoly> ctxt, const Plaintext& ptxt,
+//                                                        Ciphertext<DCRTPoly>& ctxt_out) {
+//    const auto in1 = *GetProofMetadata(ctxt);
+//    auto pt        = ptxt->GetElement<DCRTPoly>();
+//    assert(in1[0].size() == pt.GetNumOfElements());
+//    assert(in1[0][0].size() == pt.GetLength());
+//
+//    // CAUTION: ptxt->GetLength() is the number of set slots, not the ring dimension! Use pt.GetLength() instead.
+//    vector<vector<pb_linear_combination<FieldT>>> in2_lc(in1[0].size());
+//    vector<FieldT> in2_max_value(in1[0].size());
+//    const size_t ptxt_modulus = pt.GetElementAtIndex(0).GetModulus().ConvertToInt();
+//    for (size_t i = 0; i < in2_lc.size(); ++i) {
+//        in2_lc[i].resize(pt.GetLength());
+//        for (size_t j = 0; j < pt.GetLength(); ++j) {
+//            pb_variable<FieldT> var;
+//            var.allocate(pb, "in2_" + std::to_string(i) + "_" + std::to_string(j));
+//            // TODO: can we re-use some of the range checks for all entries in the input?
+//            pb.val(var) = FieldT(pt.GetElementAtIndex(0).GetValues()[j].ConvertToInt());
+//
+//            // Set max_value to be 1 larger than expected max value to trigger mod reduction
+//            less_than_constant_gadget<FieldT> g(pb, var, FieldT(ptxt_modulus).as_bigint().num_bits(),
+//                                                FieldT(ptxt_modulus));
+//            g.generate_r1cs_constraints();
+//            g.generate_r1cs_witness();
+//            in2_lc[i][j] = var;
+//        }
+//        in2_max_value[i] = FieldT(ptxt_modulus) - 1;
+//    }
+//
+//    // SetFormat(EVALUATION)
+//    assert(ptxt->GetElement<DCRTPoly>().GetFormat() == EVALUATION);
+//    vector<vector<pb_linear_combination<FieldT>>> eval_lc = in2_lc;
+//    vector<FieldT> eval_max_value                         = in2_max_value;
+//
+//    //    const Plaintext ptxt_eval(ptxt);
+//    //    ptxt_eval->SetFormat(EVALUATION);
+//    //    DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
+//    //    vector<vector<pb_linear_combination<FieldT>>> eval_lc;
+//    //    vector<FieldT> eval_max_value;
+//    //    ConstrainSetFormat(EVALUATION, pt, pt_eval, in2_lc, in2_max_value, eval_lc, eval_max_value);
+//
+//    // Add ptxt from 0-th element of ctxt
+//    LibsnarkConstraintMetadata out(in1);
+//    vector<vector<vector<FieldT>>> out_max_values(in1.size());
+//    out_max_values[0].resize(in1[0].size());
+//    for (size_t j = 0; j < in1[0].size(); ++j) {
+//        out_max_values[0][j].resize(in1[0][j].size());
+//        for (size_t k = 0; k < in1[0][j].size(); ++k) {
+//            LazyAddModGadget<FieldT> g(pb, in1[0][j][k], in1.max_value[0][j], eval_lc[j][k], eval_max_value[j],
+//                                       in1.modulus[j]);
+//            g.generate_r1cs_constraints();
+//            g.generate_r1cs_witness();
+//            out[0][j][k]            = g.out;
+//            out_max_values[0][j][k] = g.out_max_value;
+//        }
+//    }
+//
+//    for (size_t j = 0; j < out[0].size(); ++j) {
+//        out.max_value[0][j] = get_max_field_element(out_max_values[0][j]);
+//    }
+//    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkConstraintMetadata>(out));
+//}
 
-void LibsnarkProofSystem::ConstrainAddition(const Ciphertext<DCRTPoly>& ctxt, const Plaintext& ptxt,
-                                            Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto in1 = *GetProofMetadata(ctxt);
-    auto pt        = ptxt->GetElement<DCRTPoly>();
-    assert(in1[0].size() == pt.GetNumOfElements());
-    assert(in1[0][0].size() == pt.GetLength());
-
-    // CAUTION: ptxt->GetLength() is the number of set slots, not the ring dimension! Use pt.GetLength() instead.
-    vector<vector<pb_linear_combination<FieldT>>> in2_lc(in1[0].size());
-    vector<FieldT> in2_max_value(in1[0].size());
-    const size_t ptxt_modulus = pt.GetElementAtIndex(0).GetModulus().ConvertToInt();
-    for (size_t i = 0; i < in2_lc.size(); ++i) {
-        in2_lc[i].resize(pt.GetLength());
-        for (size_t j = 0; j < pt.GetLength(); ++j) {
-            pb_variable<FieldT> var;
-            var.allocate(pb, "in2_" + std::to_string(i) + "_" + std::to_string(j));
-            // TODO: can we re-use some of the range checks for all entries in the input?
-            pb.val(var) = FieldT(pt.GetElementAtIndex(0).GetValues()[j].ConvertToInt());
-
-            // Set max_value to be 1 larger than expected max value to trigger mod reduction
-            less_than_constant_gadget<FieldT> g(pb, var, FieldT(ptxt_modulus).as_bigint().num_bits(),
-                                                FieldT(ptxt_modulus));
-            g.generate_r1cs_constraints();
-            g.generate_r1cs_witness();
-            in2_lc[i][j] = var;
-        }
-        in2_max_value[i] = FieldT(ptxt_modulus) - 1;
-    }
-
-    // SetFormat(EVALUATION)
-    assert(ptxt->GetElement<DCRTPoly>().GetFormat() == EVALUATION);
-    vector<vector<pb_linear_combination<FieldT>>> eval_lc = in2_lc;
-    vector<FieldT> eval_max_value                         = in2_max_value;
-
-    //    const Plaintext ptxt_eval(ptxt);
-    //    ptxt_eval->SetFormat(EVALUATION);
-    //    DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
-    //    vector<vector<pb_linear_combination<FieldT>>> eval_lc;
-    //    vector<FieldT> eval_max_value;
-    //    ConstrainSetFormat(EVALUATION, pt, pt_eval, in2_lc, in2_max_value, eval_lc, eval_max_value);
-
-    // Add ptxt from 0-th element of ctxt
-    LibsnarkProofMetadata out(in1);
-    vector<vector<vector<FieldT>>> out_max_values(in1.size());
-    out_max_values[0].resize(in1[0].size());
-    for (size_t j = 0; j < in1[0].size(); ++j) {
-        out_max_values[0][j].resize(in1[0][j].size());
-        for (size_t k = 0; k < in1[0][j].size(); ++k) {
-            LazyAddModGadget<FieldT> g(pb, in1[0][j][k], in1.max_value[0][j], eval_lc[j][k], eval_max_value[j],
-                                       in1.modulus[j]);
-            g.generate_r1cs_constraints();
-            g.generate_r1cs_witness();
-            out[0][j][k]            = g.out;
-            out_max_values[0][j][k] = g.out_max_value;
-        }
-    }
-
-    for (size_t j = 0; j < out[0].size(); ++j) {
-        out.max_value[0][j] = get_max_field_element(out_max_values[0][j]);
-    }
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
-}
-
-void LibsnarkProofSystem::GenConstraintSubstraction(const Ciphertext<DCRTPoly>& ctxt1,
-                                                    const Ciphertext<DCRTPoly>& ctxt2, Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto wire_id = GetWireID(ctxt_out);
-
-    const auto in1 = *GetProofMetadata(ctxt1);
-    const auto in2 = *GetProofMetadata(ctxt2);
-
-    vector<unsigned long> moduli;
-    for (const auto& e : ctxt_out->GetElements()[0].GetAllElements()) {
-        moduli.push_back(e.GetModulus().ConvertToInt());
-    }
-    assert(in1.size() == in2.size());
+LibsnarkConstraintMetadata LibsnarkProofSystem::EvalSubConstraint(const LibsnarkConstraintMetadata& in1,
+                                                                  const LibsnarkConstraintMetadata& in2) {
+    assert(in1.matches_dim(in2));
     assert(in1.modulus == in2.modulus);
-    assert(in1.modulus == moduli);
 
-    const auto [num_polys, num_limbs, num_coeffs] = get_dims(ctxt1);
-    assert(matches_dim(ctxt2, num_polys, num_limbs, num_coeffs));
+    const auto [num_polys, num_limbs, num_coeffs] = in1.get_dims();
 
-    LibsnarkProofMetadata out(num_polys);
+    LibsnarkConstraintMetadata out(num_polys);
     out.max_value.resize(num_polys);
     out.modulus = in1.modulus;
 
@@ -466,7 +459,7 @@ void LibsnarkProofSystem::GenConstraintSubstraction(const Ciphertext<DCRTPoly>& 
             out[i][j].resize(num_coeffs);
             for (size_t k = 0; k < num_coeffs; k++) {
                 LazySubModGadget<FieldT> g_sub(pb, in1[i][j][k], in1.max_value[i][j], in2[i][j][k], in2.max_value[i][j],
-                                               moduli[j]);
+                                               out.modulus[j]);
 
                 g_sub.generate_r1cs_constraints();
                 out[i][j][k] = g_sub.out;
@@ -474,176 +467,93 @@ void LibsnarkProofSystem::GenConstraintSubstraction(const Ciphertext<DCRTPoly>& 
                     out.max_value[i][j] = g_sub.out_max_value;
                 }
 
-                witnessMetadata.gadgets.push_back(std::make_shared<LazySubModGadget<FieldT>>(std::move(g_sub)));
+                witnessMetadata.gadgets.push_back(std::make_shared<LazySubModGadget<FieldT>>(g_sub));
             }
         }
     }
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
-    wire_metadata[wire_id] = std::move(witnessMetadata);
+    out.witness_metadata = std::move(witnessMetadata);
+    return out;
 }
 
-void LibsnarkProofSystem::GenWitnessSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                                 Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto wire_id         = GetWireID(ctxt_out);
+void LibsnarkProofSystem::EvalSubWitness(ConstCiphertext<DCRTPoly> ctxt1, ConstCiphertext<DCRTPoly> ctxt2,
+                                         ConstCiphertext<DCRTPoly> ctxt_out) {
+    const auto wire_id         = GetWireId(ctxt_out);
     const auto witnessMetadata = wire_metadata.at(wire_id);
 
     for (const auto& g : witnessMetadata.gadgets) {
         g->generate_r1cs_witness();
     }
 }
+//
+//void LibsnarkProofSystem::ConstrainSubstraction(ConstCiphertext<DCRTPoly> ctxt, const Plaintext& ptxt,
+//                                                Ciphertext<DCRTPoly>& ctxt_out) {
+//    const auto in1 = *GetProofMetadata(ctxt);
+//    auto pt        = ptxt->GetElement<DCRTPoly>();
+//    assert(in1[0].size() == pt.GetNumOfElements());
+//    assert(in1[0][0].size() == pt.GetLength());
+//
+//    // CAUTION: ptxt->GetLength() is the number of set slots, not the ring dimension! Use pt.GetLength() instead.
+//    vector<vector<pb_linear_combination<FieldT>>> in2_lc(in1[0].size());
+//    vector<FieldT> in2_max_value(in1[0].size());
+//    const size_t ptxt_modulus = pt.GetElementAtIndex(0).GetModulus().ConvertToInt();
+//    for (size_t i = 0; i < in2_lc.size(); ++i) {
+//        in2_lc[i].resize(pt.GetLength());
+//        for (size_t j = 0; j < pt.GetLength(); ++j) {
+//            pb_variable<FieldT> var;
+//            var.allocate(pb, "in2_" + std::to_string(i) + "_" + std::to_string(j));
+//            // TODO: can we re-use some of the range checks for all entries in the input?
+//            pb.val(var) = FieldT(pt.GetElementAtIndex(0).GetValues()[j].ConvertToInt());
+//
+//            // Set max_value to be 1 larger than expected max value to trigger mod reduction
+//            less_than_constant_gadget<FieldT> g(pb, var, FieldT(ptxt_modulus).as_bigint().num_bits(),
+//                                                FieldT(ptxt_modulus));
+//            g.generate_r1cs_constraints();
+//            g.generate_r1cs_witness();
+//            in2_lc[i][j] = var;
+//        }
+//        in2_max_value[i] = FieldT(ptxt_modulus) - 1;
+//    }
+//
+//    // SetFormat(EVALUATION)
+//    Plaintext ptxt_eval(ptxt);
+//    ptxt_eval->SetFormat(EVALUATION);
+//    DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
+//    vector<vector<pb_linear_combination<FieldT>>> eval_lc;
+//    vector<FieldT> eval_max_value;
+//    ConstrainSetFormat(EVALUATION, pt, pt_eval, in2_lc, in2_max_value, eval_lc, eval_max_value);
+//
+//    // Subtract ptxt from 0-th element of ctxt
+//    LibsnarkConstraintMetadata out(in1);
+//    vector<vector<vector<FieldT>>> out_max_values(in1.size());
+//    out_max_values[0].resize(in1[0].size());
+//    for (size_t j = 0; j < in1[0].size(); ++j) {
+//        out_max_values[0][j].resize(in1[0][j].size());
+//        for (size_t k = 0; k < in1[0][j].size(); ++k) {
+//            LazySubModGadget<FieldT> g(pb, in1[0][j][k], in1.max_value[0][j], eval_lc[j][k], eval_max_value[j],
+//                                       in1.modulus[j]);
+//            g.generate_r1cs_constraints();
+//            g.generate_r1cs_witness();
+//            out[0][j][k]            = g.out;
+//            out_max_values[0][j][k] = g.out_max_value;
+//        }
+//    }
+//
+//    for (size_t j = 0; j < out[0].size(); ++j) {
+//        out.max_value[0][j] = get_max_field_element(out_max_values[0][j]);
+//    }
+//    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkConstraintMetadata>(out));
+//}
 
-void LibsnarkProofSystem::ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                                Ciphertext<DCRTPoly>& ctxt_out) {
-    SetWireId(ctxt_out, "Sub(" + GetWireID(ctxt1) + ", " + GetWireID(ctxt2) + ")");
-    switch (mode) {
-        case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
-            GenConstraintSubstraction(ctxt1, ctxt2, ctxt_out);
-            break;
-        case PROOFSYSTEM_MODE_WITNESS_GENERATION:
-            GenWitnessSubstraction(ctxt1, ctxt2, ctxt_out);
-            break;
-        default:
-            throw std::logic_error("Unhandled mode: " + std::to_string(mode));
-    }
-}
-
-void LibsnarkProofSystem::ConstrainSubstraction(const Ciphertext<DCRTPoly>& ctxt, const Plaintext& ptxt,
-                                                Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto in1 = *GetProofMetadata(ctxt);
-    auto pt        = ptxt->GetElement<DCRTPoly>();
-    assert(in1[0].size() == pt.GetNumOfElements());
-    assert(in1[0][0].size() == pt.GetLength());
-
-    // CAUTION: ptxt->GetLength() is the number of set slots, not the ring dimension! Use pt.GetLength() instead.
-    vector<vector<pb_linear_combination<FieldT>>> in2_lc(in1[0].size());
-    vector<FieldT> in2_max_value(in1[0].size());
-    const size_t ptxt_modulus = pt.GetElementAtIndex(0).GetModulus().ConvertToInt();
-    for (size_t i = 0; i < in2_lc.size(); ++i) {
-        in2_lc[i].resize(pt.GetLength());
-        for (size_t j = 0; j < pt.GetLength(); ++j) {
-            pb_variable<FieldT> var;
-            var.allocate(pb, "in2_" + std::to_string(i) + "_" + std::to_string(j));
-            // TODO: can we re-use some of the range checks for all entries in the input?
-            pb.val(var) = FieldT(pt.GetElementAtIndex(0).GetValues()[j].ConvertToInt());
-
-            // Set max_value to be 1 larger than expected max value to trigger mod reduction
-            less_than_constant_gadget<FieldT> g(pb, var, FieldT(ptxt_modulus).as_bigint().num_bits(),
-                                                FieldT(ptxt_modulus));
-            g.generate_r1cs_constraints();
-            g.generate_r1cs_witness();
-            in2_lc[i][j] = var;
-        }
-        in2_max_value[i] = FieldT(ptxt_modulus) - 1;
-    }
-
-    // SetFormat(EVALUATION)
-    Plaintext ptxt_eval(ptxt);
-    ptxt_eval->SetFormat(EVALUATION);
-    DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
-    vector<vector<pb_linear_combination<FieldT>>> eval_lc;
-    vector<FieldT> eval_max_value;
-    ConstrainSetFormat(EVALUATION, pt, pt_eval, in2_lc, in2_max_value, eval_lc, eval_max_value);
-
-    // Subtract ptxt from 0-th element of ctxt
-    LibsnarkProofMetadata out(in1);
-    vector<vector<vector<FieldT>>> out_max_values(in1.size());
-    out_max_values[0].resize(in1[0].size());
-    for (size_t j = 0; j < in1[0].size(); ++j) {
-        out_max_values[0][j].resize(in1[0][j].size());
-        for (size_t k = 0; k < in1[0][j].size(); ++k) {
-            LazySubModGadget<FieldT> g(pb, in1[0][j][k], in1.max_value[0][j], eval_lc[j][k], eval_max_value[j],
-                                       in1.modulus[j]);
-            g.generate_r1cs_constraints();
-            g.generate_r1cs_witness();
-            out[0][j][k]            = g.out;
-            out_max_values[0][j][k] = g.out_max_value;
-        }
-    }
-
-    for (size_t j = 0; j < out[0].size(); ++j) {
-        out.max_value[0][j] = get_max_field_element(out_max_values[0][j]);
-    }
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
-}
-
-void LibsnarkProofSystem::ConstrainSquare2(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto in = *GetProofMetadata(ctxt);
-
-    const auto num_limbs = in.modulus.size();
-    assert(
-        ctxt->GetElements()[0].GetNumOfElements() == ctxt_out->GetElements()[0].GetNumOfElements() &&
-        "mismatch between number of limbs between ciphertext input and output. Are you using the FIXEDMANUAL scaling technique?");
-    assert(in.size() == 3);
-
-    LibsnarkProofMetadata out(5);
-    for (size_t i = 0; i < out.size(); i++) {
-        out[i]           = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
-        out.max_value[i] = vector<FieldT>(num_limbs);
-    }
-    out.modulus = in.modulus;
-
-    LibsnarkProofMetadata tmp(1);
-    for (size_t i = 0; i < tmp.size(); i++) {
-        tmp[i]           = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
-        tmp.max_value[i] = vector<FieldT>(num_limbs);
-    }
-    tmp.modulus = in.modulus;
-
-    constrain_mulmod_lazy(in, 0, in, 0, out, 0);
-
-    constrain_mulmod_lazy(in, 0, in, 1, out, 1);
-    constrain_addmod_lazy(out, 1, out, 1, out, 1);
-
-    constrain_mulmod_lazy(in, 0, in, 2, tmp, 0);
-    constrain_addmod_lazy(tmp, 0, tmp, 0, tmp, 0);
-    constrain_mulmod_lazy(in, 1, in, 1, out, 2);
-    constrain_addmod_lazy(tmp, 0, out, 2, out, 2);
-
-    constrain_mulmod_lazy(in, 1, in, 2, out, 3);
-    constrain_addmod_lazy(out, 3, out, 3, out, 3);
-
-    constrain_mulmod_lazy(in, 2, in, 2, out, 4);
-
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
-}
-
-void LibsnarkProofSystem::ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                                  Ciphertext<DCRTPoly>& ctxt_out) {
-    SetWireId(ctxt_out, "Mul(" + GetWireID(ctxt1) + ", " + GetWireID(ctxt2) + ")");
-    switch (mode) {
-        case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
-            GenConstraintMultiplication(ctxt1, ctxt2, ctxt_out);
-            break;
-        case PROOFSYSTEM_MODE_WITNESS_GENERATION:
-            GenWitnessMultiplication(ctxt1, ctxt2, ctxt_out);
-            break;
-        default:
-            throw std::logic_error("Unhandled mode: " + std::to_string(mode));
-    }
-}
-
-void LibsnarkProofSystem::GenConstraintMultiplication(const Ciphertext<DCRTPoly>& ctxt1,
-                                                      const Ciphertext<DCRTPoly>& ctxt2,
-                                                      Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto wire_id = GetWireID(ctxt_out);
-
-    const auto in1 = *GetProofMetadata(ctxt1);
-    const auto in2 = *GetProofMetadata(ctxt2);
-
-    vector<unsigned long> moduli;
-    for (const auto& e : ctxt_out->GetElements()[0].GetAllElements()) {
-        moduli.push_back(e.GetModulus().ConvertToInt());
-    }
-    assert(in1.size() == in2.size());
+LibsnarkConstraintMetadata LibsnarkProofSystem::EvalMultNoRelinConstraint(const LibsnarkConstraintMetadata& in1,
+                                                                          const LibsnarkConstraintMetadata& in2) {
+    assert(in1.matches_dim(in2));
     assert(in1.modulus == in2.modulus);
-    assert(in1.modulus == moduli);
 
-    const auto [num_polys, num_limbs, num_coeffs] = get_dims(ctxt1);
+    const auto [num_polys, num_limbs, num_coeffs] = in1.get_dims();
+
     assert(num_polys == 2);
-    assert(matches_dim(ctxt2, num_polys, num_limbs, num_coeffs));
-    assert(matches_dim(ctxt_out, num_polys + 1, num_limbs, num_coeffs));
 
-    LibsnarkProofMetadata out(3);
+    LibsnarkConstraintMetadata out(3);
     out.modulus = in1.modulus;
     for (size_t i = 0; i < out.size(); i++) {
         out[i].resize(num_limbs);
@@ -658,7 +568,7 @@ void LibsnarkProofSystem::GenConstraintMultiplication(const Ciphertext<DCRTPoly>
     for (size_t j = 0; j < num_limbs; j++) {
         for (size_t k = 0; k < num_coeffs; k++) {
             LazyMulModGadget<FieldT> g_00(pb, in1[0][j][k], in1.max_value[0][j], in2[0][j][k], in2.max_value[0][j],
-                                          moduli[j]);
+                                          out.modulus[j]);
             g_00.generate_r1cs_constraints();
             out[0][j][k] = g_00.out;
             if (gt(g_00.out_max_value, out.max_value[0][j])) {
@@ -666,12 +576,13 @@ void LibsnarkProofSystem::GenConstraintMultiplication(const Ciphertext<DCRTPoly>
             }
 
             LazyMulModGadget<FieldT> g_01(pb, in1[0][j][k], in1.max_value[0][j], in2[1][j][k], in2.max_value[1][j],
-                                          moduli[j]);
+                                          out.modulus[j]);
             g_01.generate_r1cs_constraints();
             LazyMulModGadget<FieldT> g_10(pb, in1[1][j][k], in1.max_value[1][j], in2[0][j][k], in2.max_value[0][j],
-                                          moduli[j]);
+                                          out.modulus[j]);
             g_10.generate_r1cs_constraints();
-            LazyAddModGadget<FieldT> g_add(pb, g_01.out, g_01.out_max_value, g_10.out, g_10.out_max_value, moduli[j]);
+            LazyAddModGadget<FieldT> g_add(pb, g_01.out, g_01.out_max_value, g_10.out, g_10.out_max_value,
+                                           out.modulus[j]);
             g_add.generate_r1cs_constraints();
             out[1][j][k] = g_add.out;
             if (gt(g_add.out_max_value, out.max_value[1][j])) {
@@ -679,7 +590,7 @@ void LibsnarkProofSystem::GenConstraintMultiplication(const Ciphertext<DCRTPoly>
             }
 
             LazyMulModGadget<FieldT> g_11(pb, in1[1][j][k], in1.max_value[1][j], in2[1][j][k], in2.max_value[1][j],
-                                          moduli[j]);
+                                          out.modulus[j]);
             g_11.generate_r1cs_constraints();
             out[2][j][k] = g_11.out;
             if (gt(g_11.out_max_value, out.max_value[2][j])) {
@@ -694,13 +605,13 @@ void LibsnarkProofSystem::GenConstraintMultiplication(const Ciphertext<DCRTPoly>
         }
     }
 
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(std::move(out)));
-    wire_metadata[wire_id] = std::move(witnessMetadata);
+    out.witness_metadata = std::move(witnessMetadata);
+    return out;
 }
 
-void LibsnarkProofSystem::GenWitnessMultiplication(const Ciphertext<DCRTPoly>& ctxt1, const Ciphertext<DCRTPoly>& ctxt2,
-                                                   Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto wire_id         = GetWireID(ctxt_out);
+void LibsnarkProofSystem::EvalMultNoRelinWitness(ConstCiphertext<DCRTPoly> ctxt1, ConstCiphertext<DCRTPoly> ctxt2,
+                                                 ConstCiphertext<DCRTPoly> ctxt_out) {
+    const auto wire_id         = GetWireId(ctxt_out);
     const auto witnessMetadata = wire_metadata.at(wire_id);
 
     for (const auto& g : witnessMetadata.gadgets) {
@@ -708,104 +619,450 @@ void LibsnarkProofSystem::GenWitnessMultiplication(const Ciphertext<DCRTPoly>& c
     }
 }
 
-void LibsnarkProofSystem::ConstrainMultiplication(const Ciphertext<DCRTPoly>& ctxt, const Plaintext& ptxt,
-                                                  Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto in1 = *GetProofMetadata(ctxt);
-    auto pt        = ptxt->GetElement<DCRTPoly>();
-    assert(in1[0].size() == pt.GetNumOfElements());
-    assert(in1[0][0].size() == pt.GetLength());
+//void LibsnarkProofSystem::EvalMultNoRelin(ConstCiphertext<DCRTPoly> ctxt, const Plaintext& ptxt,
+//                                          Ciphertext<DCRTPoly>& ctxt_out) {
+//    const auto in1 = *GetProofMetadata(ctxt);
+//    auto pt        = ptxt->GetElement<DCRTPoly>();
+//    assert(in1[0].size() == pt.GetNumOfElements());
+//    assert(in1[0][0].size() == pt.GetLength());
+//
+//    // CAUTION: ptxt->GetLength() is the number of set slots, not the ring dimension! Use pt.GetLength() instead.
+//    vector<vector<pb_linear_combination<FieldT>>> in2_lc(in1[0].size());
+//    vector<FieldT> in2_max_value(in1[0].size());
+//    const size_t ptxt_modulus = pt.GetElementAtIndex(0).GetModulus().ConvertToInt();
+//    for (size_t i = 0; i < in2_lc.size(); ++i) {
+//        in2_lc[i].resize(pt.GetLength());
+//        for (size_t j = 0; j < pt.GetLength(); ++j) {
+//            pb_variable<FieldT> var;
+//            var.allocate(pb, "in2_" + std::to_string(i) + "_" + std::to_string(j));
+//            // TODO: can we re-use some of the range checks for all entries in the input?
+//            pb.val(var) = FieldT(pt.GetElementAtIndex(0).GetValues()[j].ConvertToInt());
+//
+//            // Set max_value to be 1 larger than expected max value to trigger mod reduction
+//            less_than_constant_gadget<FieldT> g(pb, var, FieldT(ptxt_modulus).as_bigint().num_bits(),
+//                                                FieldT(ptxt_modulus));
+//            g.generate_r1cs_constraints();
+//            g.generate_r1cs_witness();
+//            in2_lc[i][j] = var;
+//        }
+//        in2_max_value[i] = FieldT(ptxt_modulus) - 1;
+//    }
+//
+//    // SetFormat(EVALUATION)
+//    //    assert(ptxt->GetElement<DCRTPoly>().GetFormat() == EVALUATION);
+//    const Plaintext ptxt_eval(ptxt);
+//    ptxt_eval->SetFormat(EVALUATION);
+//    DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
+//    vector<vector<pb_linear_combination<FieldT>>> eval_lc;
+//    vector<FieldT> eval_max_value;
+//    ConstrainSetFormat(EVALUATION, pt, pt_eval, in2_lc, in2_max_value, eval_lc, eval_max_value);
+//
+//    // Multiply each entry of ctxt with ptxt
+//    LibsnarkConstraintMetadata out(in1.size());
+//    vector<vector<vector<FieldT>>> out_max_values(in1.size());
+//    out.modulus = in1.modulus;
+//    for (size_t i = 0; i < in1.size(); ++i) {
+//        out[i].resize(in1[i].size());
+//        out_max_values[i].resize(in1[i].size());
+//        for (size_t j = 0; j < in1[i].size(); ++j) {
+//            out[i][j].resize(in1[i][j].size());
+//            out_max_values[i][j].resize(in1[i][j].size());
+//            for (size_t k = 0; k < in1[i][j].size(); ++k) {
+//                LazyMulModGadget<FieldT> g(pb, in1[i][j][k], in1.max_value[i][j], eval_lc[j][k], eval_max_value[j],
+//                                           in1.modulus[j]);
+//                g.generate_r1cs_constraints();
+//                g.generate_r1cs_witness();
+//                out[i][j][k]            = g.out;
+//                out_max_values[i][j][k] = g.out_max_value;
+//            }
+//        }
+//    }
+//    for (size_t i = 0; i < out.size(); ++i) {
+//        out.max_value[i].resize(out[i].size());
+//        for (size_t j = 0; j < out[i].size(); ++j) {
+//            out.max_value[i][j] = get_max_field_element(out_max_values[i][j]);
+//        }
+//    }
+//    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkConstraintMetadata>(out));
+//}
 
-    // CAUTION: ptxt->GetLength() is the number of set slots, not the ring dimension! Use pt.GetLength() instead.
-    vector<vector<pb_linear_combination<FieldT>>> in2_lc(in1[0].size());
-    vector<FieldT> in2_max_value(in1[0].size());
-    const size_t ptxt_modulus = pt.GetElementAtIndex(0).GetModulus().ConvertToInt();
-    for (size_t i = 0; i < in2_lc.size(); ++i) {
-        in2_lc[i].resize(pt.GetLength());
-        for (size_t j = 0; j < pt.GetLength(); ++j) {
-            pb_variable<FieldT> var;
-            var.allocate(pb, "in2_" + std::to_string(i) + "_" + std::to_string(j));
-            // TODO: can we re-use some of the range checks for all entries in the input?
-            pb.val(var) = FieldT(pt.GetElementAtIndex(0).GetValues()[j].ConvertToInt());
+LibsnarkConstraintMetadata LibsnarkProofSystem::EvalSquareConstraint(const LibsnarkConstraintMetadata& in) {
+    //}(ConstCiphertext<DCRTPoly> ctxt, Ciphertext<DCRTPoly>& ctxt_out) {
 
-            // Set max_value to be 1 larger than expected max value to trigger mod reduction
-            less_than_constant_gadget<FieldT> g(pb, var, FieldT(ptxt_modulus).as_bigint().num_bits(),
-                                                FieldT(ptxt_modulus));
-            g.generate_r1cs_constraints();
-            g.generate_r1cs_witness();
-            in2_lc[i][j] = var;
-        }
-        in2_max_value[i] = FieldT(ptxt_modulus) - 1;
-    }
-
-    // SetFormat(EVALUATION)
-    //    assert(ptxt->GetElement<DCRTPoly>().GetFormat() == EVALUATION);
-    const Plaintext ptxt_eval(ptxt);
-    ptxt_eval->SetFormat(EVALUATION);
-    DCRTPoly pt_eval = ptxt_eval->GetElement<DCRTPoly>();
-    vector<vector<pb_linear_combination<FieldT>>> eval_lc;
-    vector<FieldT> eval_max_value;
-    ConstrainSetFormat(EVALUATION, pt, pt_eval, in2_lc, in2_max_value, eval_lc, eval_max_value);
-
-    // Multiply each entry of ctxt with ptxt
-    LibsnarkProofMetadata out(in1.size());
-    vector<vector<vector<FieldT>>> out_max_values(in1.size());
-    out.modulus = in1.modulus;
-    for (size_t i = 0; i < in1.size(); ++i) {
-        out[i].resize(in1[i].size());
-        out_max_values[i].resize(in1[i].size());
-        for (size_t j = 0; j < in1[i].size(); ++j) {
-            out[i][j].resize(in1[i][j].size());
-            out_max_values[i][j].resize(in1[i][j].size());
-            for (size_t k = 0; k < in1[i][j].size(); ++k) {
-                LazyMulModGadget<FieldT> g(pb, in1[i][j][k], in1.max_value[i][j], eval_lc[j][k], eval_max_value[j],
-                                           in1.modulus[j]);
-                g.generate_r1cs_constraints();
-                g.generate_r1cs_witness();
-                out[i][j][k]            = g.out;
-                out_max_values[i][j][k] = g.out_max_value;
-            }
-        }
-    }
-    for (size_t i = 0; i < out.size(); ++i) {
-        out.max_value[i].resize(out[i].size());
-        for (size_t j = 0; j < out[i].size(); ++j) {
-            out.max_value[i][j] = get_max_field_element(out_max_values[i][j]);
-        }
-    }
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
-}
-
-void LibsnarkProofSystem::ConstrainSquare(const Ciphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out) {
-    const auto in = *GetProofMetadata(ctxt);
-
-    const auto num_limbs = in.modulus.size();
-    assert(
-        ctxt->GetElements()[0].GetNumOfElements() == ctxt_out->GetElements()[0].GetNumOfElements() &&
-        "mismatch between number of limbs between ciphertext input and output. Are you using the FIXEDMANUAL scaling technique?");
+    const auto [num_polys, num_limbs, num_coeffs] = in.get_dims();
+    //
+    //    assert(
+    //        ctxt->GetElements()[0].GetNumOfElements() == ctxt_out->GetElements()[0].GetNumOfElements() &&
+    //        "mismatch between number of limbs between ciphertext input and output. Are you using the FIXEDMANUAL scaling technique?");
     assert(in.size() == 2);
 
-    LibsnarkProofMetadata tmp(1);
+    LibsnarkWitnessMetadata witnessMetadata;
+
+    LibsnarkConstraintMetadata tmp(1);
     for (size_t i = 0; i < tmp.size(); i++) {
         tmp[i] = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
     }
     tmp.modulus = in.modulus;
-    constrain_mulmod_lazy(in, 0, in, 1, tmp, 0);
+    constrain_mulmod_lazy(in, 0, in, 1, tmp, 0, witnessMetadata.gadgets);
 
-    LibsnarkProofMetadata out(3);
+    LibsnarkConstraintMetadata out(3);
     for (size_t i = 0; i < out.size(); i++) {
         out[i] = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
     }
     out.modulus = in.modulus;
-    constrain_mulmod_lazy(in, 0, in, 0, out, 0);
-    constrain_addmod_lazy(tmp, 0, tmp, 0, out, 1);
-    constrain_mulmod_lazy(in, 1, in, 1, out, 2);
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
+
+    constrain_mulmod_lazy(in, 0, in, 0, out, 0, witnessMetadata.gadgets);
+    constrain_addmod_lazy(tmp, 0, tmp, 0, out, 1, witnessMetadata.gadgets);
+    constrain_mulmod_lazy(in, 1, in, 1, out, 2, witnessMetadata.gadgets);
+
+    out.witness_metadata = std::move(witnessMetadata);
+
+    return out;
 }
 
-std::shared_ptr<LibsnarkProofMetadata> LibsnarkProofSystem::ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext) {
+void LibsnarkProofSystem::EvalSquareWitness(ConstCiphertext<DCRTPoly> ciphertext,
+                                            ConstCiphertext<DCRTPoly> ciphertext_out) {}
+
+//void LibsnarkProofSystem::ConstrainSquare2(ConstCiphertext<DCRTPoly> ctxt, Ciphertext<DCRTPoly>& ctxt_out) {
+//    const auto in = *GetProofMetadata(ctxt);
+//
+//    const auto num_limbs = in.modulus.size();
+//    assert(
+//        ctxt->GetElements()[0].GetNumOfElements() == ctxt_out->GetElements()[0].GetNumOfElements() &&
+//        "mismatch between number of limbs between ciphertext input and output. Are you using the FIXEDMANUAL scaling technique?");
+//    assert(in.size() == 3);
+//
+//    LibsnarkConstraintMetadata out(5);
+//    for (size_t i = 0; i < out.size(); i++) {
+//        out[i]           = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
+//        out.max_value[i] = vector<FieldT>(num_limbs);
+//    }
+//    out.modulus = in.modulus;
+//
+//    LibsnarkConstraintMetadata tmp(1);
+//    for (size_t i = 0; i < tmp.size(); i++) {
+//        tmp[i]           = vector<vector<pb_linear_combination<FieldT>>>(num_limbs);
+//        tmp.max_value[i] = vector<FieldT>(num_limbs);
+//    }
+//    tmp.modulus = in.modulus;
+//
+//    constrain_mulmod_lazy(in, 0, in, 0, out, 0);
+//
+//    constrain_mulmod_lazy(in, 0, in, 1, out, 1);
+//    constrain_addmod_lazy(out, 1, out, 1, out, 1);
+//
+//    constrain_mulmod_lazy(in, 0, in, 2, tmp, 0);
+//    constrain_addmod_lazy(tmp, 0, tmp, 0, tmp, 0);
+//    constrain_mulmod_lazy(in, 1, in, 1, out, 2);
+//    constrain_addmod_lazy(tmp, 0, out, 2, out, 2);
+//
+//    constrain_mulmod_lazy(in, 1, in, 2, out, 3);
+//    constrain_addmod_lazy(out, 3, out, 3, out, 3);
+//
+//    constrain_mulmod_lazy(in, 2, in, 2, out, 4);
+//
+//    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkConstraintMetadata>(out));
+//}
+
+// TODO: add gadgets
+LibsnarkConstraintMetadata LibsnarkProofSystem::RescaleConstraint(ConstCiphertext<DCRTPoly> ctxt_in,
+                                                                      const LibsnarkConstraintMetadata& m) {
+    const auto [num_polys, num_limbs, num_coeffs] = m.get_dims();
+
+    LibsnarkConstraintMetadata out(num_polys);
+    out.modulus.resize(num_limbs - 1);
+    for (size_t j = 0; j < num_limbs - 1; ++j) {
+        out.modulus[j] = m.modulus[j];
+    }
+    for (size_t i = 0; i < num_polys; ++i) {
+        out[i].resize(num_limbs - 1);
+        out.max_value[i].resize(num_limbs - 1);
+        for (size_t j = 0; j < num_limbs - 1; ++j) {
+            out[i][j]           = m[i][j];
+            out.max_value[i][j] = m.max_value[i][j];
+        }
+
+        vector<pb_linear_combination<FieldT>> last_lc;
+        FieldT last_max_value;
+        auto lastPoly = ctxt_in->GetElements()[i].GetElementAtIndex(num_limbs - 1);
+        auto lastPolyCoef(lastPoly);
+        lastPolyCoef.SetFormat(Format::COEFFICIENT);
+
+        ConstrainSetFormat(Format::COEFFICIENT, lastPoly, lastPolyCoef, m[i][num_limbs - 1],
+                           m.max_value[i][num_limbs - 1], last_lc, last_max_value);
+
+        DCRTPoly extra(ctxt_in->GetElements()[i].GetParams(), COEFFICIENT, true);
+        vector<vector<pb_linear_combination<FieldT>>> extra_lc(extra.GetNumOfElements());
+        vector<FieldT> extra_max_value(extra.GetNumOfElements());
+        for (usint j = 0; j < extra.GetNumOfElements(); j++) {
+            auto temp         = lastPoly;
+            const auto newMod = ctxt_in->GetElements()[0].GetElementAtIndex(j).GetModulus();
+            const auto newRoU = ctxt_in->GetElements()[0].GetElementAtIndex(j).GetRootOfUnity();
+
+            temp.SwitchModulus(newMod, newRoU, 0, 0);
+            ConstrainSwitchModulus(newMod, newRoU, 0, 0, lastPoly, temp, last_lc, last_max_value, extra_lc[j],
+                                   extra_max_value[j]);
+            //            extra.m_vectors[j] = (temp *= QlQlInvModqlDivqlModq[j]);
+        }
+
+        //        if (this->GetFormat() == Format::EVALUATION)
+        //            extra.SetFormat(Format::EVALUATION);
+        auto extra_eval(extra);
+        extra_eval.SetFormat(Format::EVALUATION);
+        vector<vector<pb_linear_combination<FieldT>>> extra_eval_lc(extra.GetNumOfElements());
+        vector<FieldT> extra_eval_max_value(extra.GetNumOfElements());
+        ConstrainSetFormat(Format::EVALUATION, extra, extra_eval, extra_lc, extra_max_value, extra_eval_lc,
+                           extra_eval_max_value);
+
+        //        for (usint i = 0; i < m_vectors.size(); i++) {
+        //            m_vectors[i] *= qlInvModq[i];
+        //            m_vectors[i] += extra.m_vectors[i];
+        //        }
+
+        for (size_t j = 0; j < out[i].size(); j++) {
+            FieldT curr_max = 0;
+            for (size_t k = 0; k < out[i][j].size(); k++) {
+                LazyAddModGadget<FieldT> g(pb, out[i][j][k], out.max_value.at(i).at(j), extra_eval_lc.at(j).at(k),
+                                           extra_eval_max_value.at(j), out.modulus.at(j));
+                g.generate_r1cs_constraints();
+                g.generate_r1cs_witness();
+                out[i][j][k] = g.out;
+                if (lt(curr_max, g.out_max_value)) {
+                    curr_max = g.out_max_value;
+                }
+            }
+            out.max_value[i][j] = curr_max;
+        }
+
+        //        this->SetFormat(Format::EVALUATION);
+        //        assert(ctxt_out->GetElements()[i].GetFormat() == Format::EVALUATION);
+        //        auto curr_eval(ctxt_out->GetElements()[i]);
+        //        curr_eval.SetFormat(Format::EVALUATION);
+        //        ConstrainSetFormat(Format::EVALUATION, ctxt_out->GetElements()[i], curr_eval, out[i], out.max_value[i], out[i],
+        //                           out.max_value[i]);
+    }
+
+    return out;
+}
+
+void LibsnarkProofSystem::RescaleWitness(ConstCiphertext<DCRTPoly> ctxt, ConstCiphertext<DCRTPoly> ctxt_out) {
+    const auto wire_id         = GetWireId(ctxt_out);
+    const auto witnessMetadata = wire_metadata.at(wire_id);
+
+    for (const auto& g : witnessMetadata.gadgets) {
+        g->generate_r1cs_witness();
+    }
+}
+
+// TODO: add gadgets
+LibsnarkConstraintMetadata LibsnarkProofSystem::EvalRotateConstraint(ConstCiphertext<DCRTPoly> ciphertext,
+                                                                     const int rot_idx,
+                                                                     ConstCiphertext<DCRTPoly> ctxt_out) {
+    auto in = *GetProofMetadata(ciphertext);
+
+    auto index    = rot_idx;
+    const auto cc = ciphertext->GetCryptoContext();
+
+    auto evalKeyMap = cc->GetEvalAutomorphismKeyMap(ciphertext->GetKeyTag());
+    //    return GetScheme()->EvalAtIndex(ciphertext, index, evalKeyMap);
+
+    usint M = ciphertext->GetCryptoParameters()->GetElementParams()->GetCyclotomicOrder();
+
+    auto algo          = ciphertext->GetCryptoContext()->GetScheme();
+    uint32_t autoIndex = FindAutomorphismIndex2n(index, M);  // TODO: use scheme stored in ctxt instead
+
+    //    return EvalAutomorphism(ciphertext, autoIndex, evalKeyMap);
+
+    auto i   = autoIndex;
+    auto key = evalKeyMap.find(i);
+    assert(key != evalKeyMap.end());
+
+    //    if (key == evalKeyMap.end()) {
+    //        std::string errorMsg(std::string("Could not find an EvalKey for index ") + std::to_string(i) + CALLER_INFO);
+    //        OPENFHE_THROW(type_error, errorMsg);
+    //    }
+
+    auto evalKey = key->second;
+
+    //    CheckKey(evalKey);
+
+    //    return GetScheme()->EvalAutomorphism(ciphertext, i, evalKeyMap);
+
+    auto evalKeyIterator = evalKeyMap.find(i);
+    assert(evalKeyIterator != evalKeyMap.end());
+    using Element                  = DCRTPoly;
+    const std::vector<Element>& cv = ciphertext->GetElements();
+    usint N                        = cv[0].GetRingDimension();
+
+    std::vector<usint> vec(N);
+    PrecomputeAutoMap(N, i, &vec);
+
+    //    auto algo = ciphertext->GetCryptoContext()->GetScheme();
+
+    Ciphertext<Element> result = ciphertext->Clone();
+    algo->KeySwitchInPlace(result, evalKeyIterator->second);
+    ConstrainKeySwitch(ciphertext, evalKeyIterator->second, result);
+
+    //    rcv[0] = rcv[0].AutomorphismTransform(i, vec);
+    //    rcv[1] = rcv[1].AutomorphismTransform(i, vec);
+    auto precomp = vec;
+    LibsnarkConstraintMetadata out(in);
+    for (size_t i = 0; i < out.size(); i++) {
+        for (size_t j = 0; j < out[0].size(); ++j) {
+            for (size_t k = 0; k < out[0][0].size(); ++k) {
+                out[i][j][k] = out[i][j][precomp[k]];
+            }
+        }
+    }
+
+    return out;
+}
+
+void LibsnarkProofSystem::EvalRotateWitness(ConstCiphertext<DCRTPoly > ciphertext, int rot_idx,
+                                        ConstCiphertext<DCRTPoly > ctxt_out) {
+    const auto wire_id         = GetWireId(ctxt_out);
+    const auto witnessMetadata = wire_metadata.at(wire_id);
+
+    for (const auto& g : witnessMetadata.gadgets) {
+        g->generate_r1cs_witness();
+    }
+}
+// TODO: add gadgets
+LibsnarkConstraintMetadata LibsnarkProofSystem::RelinearizeConstraint(ConstCiphertext<DCRTPoly> ciphertext) {
+    assert(!!ciphertext);
+
+    const LibsnarkConstraintMetadata in = *(GetProofMetadata(ciphertext));
+    const size_t num_poly               = ciphertext->GetElements().size();
+    const size_t num_limbs              = ciphertext->GetElements()[0].GetNumOfElements();
+    assert(num_poly == 3);  // We don't support higher-order relin
+    assert(in.size() == num_poly);
+    assert(in[0].size() == num_limbs);
+    //    assert(out->GetElements()[0].GetNumOfElements() == num_limbs);
+
+    LibsnarkConstraintMetadata out_metadata(2);
+
+    const auto evalKeyVec = this->GetCryptoContext()->GetEvalMultKeyVector(ciphertext->GetKeyTag());
+    assert(evalKeyVec.size() >= (ciphertext->GetElements().size() - 2));
+
+    const auto cv = ciphertext->GetElements();
+    for (auto& c : cv) {
+        assert(c.GetFormat() == Format::EVALUATION);  // Should always hold for BGV, no need to constrain
+        // c.SetFormat(Format::EVALUATION);
+    }
+
+    auto algo = ciphertext->GetCryptoContext()->GetScheme();
+
+    out_metadata           = LibsnarkConstraintMetadata(2);
+    out_metadata[0]        = in[0];
+    out_metadata[1]        = in[1];
+    out_metadata.max_value = {in.max_value[0], in.max_value[1]};
+    out_metadata.modulus   = in.modulus;
+
+    for (size_t j = 2; j < num_poly; j++) {
+        //        auto ab      = algo->KeySwitchCore(cv[j], evalKeyVec[j - 2]);
+        auto evalKey = evalKeyVec[j - 2];
+
+        const auto cryptoParamsBase = evalKey->GetCryptoParameters();
+        std::shared_ptr<std::vector<DCRTPoly>> digits =
+            KeySwitchBV().EvalKeySwitchPrecomputeCore(cv[j], cryptoParamsBase);
+
+        vector<vector<vector<pb_linear_combination<FieldT>>>> tmp_lc;
+        vector<vector<FieldT>> tmp_max_value;
+        ConstrainKeySwitchPrecomputeCore(cv[j], evalKey->GetCryptoParameters(), digits, in[j], in.max_value[j], tmp_lc,
+                                         tmp_max_value);
+
+        std::shared_ptr<std::vector<DCRTPoly>> result =
+            KeySwitchBV().EvalFastKeySwitchCore(digits, evalKey, cv[j].GetParams());
+        vector<vector<vector<pb_linear_combination<FieldT>>>> tmp2_lc;
+        vector<vector<FieldT>> tmp2_max_value;
+        ConstrainFastKeySwitchCore(digits, evalKey, cv[j].GetParams(), result, tmp_lc, tmp_max_value, tmp2_lc,
+                                   tmp2_max_value);
+
+        //        cv[0] += (*ab)[0];
+        //        cv[1] += (*ab)[1];
+        LibsnarkConstraintMetadata tmp_metadata(tmp2_lc);
+        tmp_metadata.max_value = tmp2_max_value;
+        tmp_metadata.modulus   = in.modulus;
+        constrain_addmod_lazy(out_metadata, 0, tmp_metadata, 0, out_metadata, 0);
+        constrain_addmod_lazy(out_metadata, 1, tmp_metadata, 1, out_metadata, 1);
+    }
+
+    return out_metadata;
+}
+
+void LibsnarkProofSystem::RelinearizeWitness(ConstCiphertext<DCRTPoly> ctxt, ConstCiphertext<DCRTPoly> ctxt_out) {
+    const auto wire_id         = GetWireId(ctxt_out);
+    const auto witnessMetadata = wire_metadata.at(wire_id);
+
+    for (const auto& g : witnessMetadata.gadgets) {
+        g->generate_r1cs_witness();
+    }
+}
+
+// TODO: add gadgets
+LibsnarkConstraintMetadata LibsnarkProofSystem::KeySwitchConstraint(ConstCiphertext<DCRTPoly> ctxt_in,
+                                                                    const EvalKey<DCRTPoly>& ek,
+                                                                    ConstCiphertext<DCRTPoly> ctxt_out) {
+    assert(ctxt_in->GetElements().size() == 2);
+    auto in = *GetProofMetadata(ctxt_in);
+
+    const std::vector<DCRTPoly>& cv = ctxt_in->GetElements();
+
+    //    std::shared_ptr<std::vector<DCRTPoly>> ba = KeySwitchCore(cv[1], ek) ;
+    auto a                                        = cv[1];
+    const auto cryptoParamsBase                   = ek->GetCryptoParameters();
+    std::shared_ptr<std::vector<DCRTPoly>> digits = KeySwitchBV().EvalKeySwitchPrecomputeCore(a, cryptoParamsBase);
+    vector<vector<vector<pb_linear_combination<FieldT>>>> digits_lc;
+    vector<vector<FieldT>> digits_max_value;
+    ConstrainKeySwitchPrecomputeCore(a, cryptoParamsBase, digits, in[1], in.max_value[1], digits_lc, digits_max_value);
+
+    std::shared_ptr<std::vector<DCRTPoly>> result = KeySwitchBV().EvalFastKeySwitchCore(digits, ek, a.GetParams());
+    vector<vector<vector<pb_linear_combination<FieldT>>>> out_lc;
+    vector<vector<FieldT>> out_max_value;
+    ConstrainFastKeySwitchCore(digits, ek, a.GetParams(), result, digits_lc, digits_max_value, out_lc, out_max_value);
+    LibsnarkConstraintMetadata out(out_lc);
+    out.max_value = out_max_value;
+    out.modulus   = out.modulus;
+
+    auto ba = digits;
+    assert(cv[0].GetFormat() == (*ba)[0].GetFormat());
+    //    cv[0] += (*ba)[0];
+    for (size_t j = 0; j < out[0].size(); j++) {
+        for (size_t k = 0; k < out[0][j].size(); k++) {
+            LazyAddModGadget<FieldT> g(pb, out[0][j][k], out.max_value[0][j], in[0][j][k], in.max_value[0][j],
+                                       in.modulus[j]);
+            g.generate_r1cs_constraints();
+        }
+    }
+
+    assert(cv[1].GetFormat() == (*ba)[1].GetFormat());
+
+    assert(cv.size() <= 2);
+    //    if (cv.size() > 2) {
+    //        cv[1] += (*ba)[1];
+    //    }
+    //    else {
+    //    cv[1] = (*ba)[1];
+    //    }
+
+    return out;
+}
+
+void LibsnarkProofSystem::KeySwitchWitness(ConstCiphertext<DCRTPoly> ctxt_in, const EvalKey<DCRTPoly>& ek,
+                                           ConstCiphertext<DCRTPoly>& ctxt_out) {
+    const auto wire_id         = GetWireId(ctxt_out);
+    const auto witnessMetadata = wire_metadata.at(wire_id);
+
+    for (const auto& g : witnessMetadata.gadgets) {
+        g->generate_r1cs_witness();
+    }
+}
+
+std::shared_ptr<LibsnarkConstraintMetadata> LibsnarkProofSystem::ConstrainPublicOutput(
+    Ciphertext<DCRTPoly>& ciphertext) {
     const size_t num_poly  = ciphertext->GetElements().size();
     const size_t num_limbs = ciphertext->GetElements()[0].GetNumOfElements();
-    LibsnarkProofMetadata out(num_poly);
+    LibsnarkConstraintMetadata out(num_poly);
     out.max_value = vector<vector<FieldT>>(num_poly);
     out.modulus   = vector<size_t>(num_limbs);
 
@@ -832,10 +1089,11 @@ std::shared_ptr<LibsnarkProofMetadata> LibsnarkProofSystem::ConstrainPublicOutpu
     }
 
     pb.set_input_sizes(pb.num_inputs() + (out.size() * out[0].size() * out[0][0].size()));
-    return std::make_shared<LibsnarkProofMetadata>(out);
+    return std::make_shared<LibsnarkConstraintMetadata>(out);
 }
 
-void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkProofMetadata& out_vars) {
+void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt,
+                                                    const LibsnarkConstraintMetadata& out_vars) {
     // ctxt holds metadata for the output of the computation, vars holds the (public input) variables allocated at the beginning of the computation
     // We resolve all pending lazy mod-reductions, and add constraints binding vars to the output of the computation
     auto out           = *GetProofMetadata(ctxt);
@@ -1223,6 +1481,121 @@ void LibsnarkProofSystem::ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfU
 #endif
 }
 
+vector<std::shared_ptr<gadget_gen<FieldT>>> NTTConstraint(
+    protoboard<FieldT>& pb, const DCRTPoly::PolyType::Vector::Integer& rootOfUnity,
+    const DCRTPoly::PolyType::Vector::Integer& modulus, const vector<pb_linear_combination<FieldT>>& in_lc,
+    const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value) {
+    out_lc = vector<pb_linear_combination<FieldT>>(in_lc.size());
+
+    const usint n    = in_lc.size();
+    const auto msb   = lbcrypto::GetMSB64(n - 1);
+    const auto& q    = modulus;
+    const auto q_int = q.template ConvertToInt<unsigned long>();
+    const auto& psi  = rootOfUnity;
+    const auto omega = psi.ModMul(psi, q);
+
+    // TODO: memoize pows, find more efficient (?) way to compute pows from powers of psi directly
+    // pows[i][j] = psi^j * omega^(ij) (mod q)
+    vector<DCRTPoly::PolyType::Vector::Integer> psi_pows(n);
+    psi_pows[0] = 1;
+    for (size_t k = 1; k < n; ++k) {
+        psi_pows[k] = psi_pows[k - 1].ModMul(psi, q);
+    }
+    vector<vector<DCRTPoly::PolyType::Vector::Integer>> pows(n, vector<DCRTPoly::PolyType::Vector::Integer>(n));
+    vector<vector<unsigned long>> pows_int(n, vector<unsigned long>(n));
+
+    //#pragma omp parallel for
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            const auto omega_pow_ij = omega.ModExp(i * j, q);
+            pows[i][j]              = psi_pows[j].ModMul(omega_pow_ij, q);
+            pows_int[i][j]          = pows[i][j].template ConvertToInt<unsigned long>();
+        }
+    }
+
+    /*
+    // TODO: this version generate slightly fewer constraints in some cases (e.g., when the inputs are just the right size), but is quite slow at constraint generation time
+    vector<FieldT> out_max_values(out_lc.size());
+     for (size_t i = 0; i < n; ++i) {
+        LazyMulModGadget<FieldT> g(pb, in_lc[0], in_max_value, FieldT(pows_int[i][0]), q_int);
+        out_lc[i]         = g.out;
+        out_max_values[i] = g.out_max_value;
+        for (size_t j = 1; j < n; ++j) {
+            LazyMulModGadget<FieldT> g_mul(pb, in_lc[j], in_max_value, FieldT(pows_int[i][j]), q_int);
+            LazyAddModGadget<FieldT> g_j(pb, out_lc[i], out_max_values[i], g_mul.out, g_mul.out_max_value, q_int);
+            out_lc[i]         = g_j.out;
+            out_max_values[i] = g_j.out_max_value;
+        }
+    }
+    // Set out_max_value to max of all out_max_values for soundness
+    out_max_value = 0;
+    for (size_t i = 0; i < n; i++) {
+       if (lt(out_max_value, out_max_values[i])) {
+           out_max_value = out_max_values[i];
+       }
+    }
+     */
+
+    bool overflows = 2 + std::max(in_max_value.as_bigint().num_bits(),
+                                  std::max((unsigned long)q.GetMSB(), (unsigned long)ceil(log2(n)))) >=
+                     FieldT::num_bits;
+    // This max_value bound might not necessarily be tight, but we might gain only a few bits in accuracy by using more precise accounting based on the actual values in pows.
+    FieldT max_value = FieldT(n) * FieldT(q_int - 1) * in_max_value;
+    overflows        = overflows || (max_value.as_bigint().num_bits() >= FieldT::num_bits);
+
+    vector<pb_linear_combination<FieldT>> ntt_in_lc;
+    FieldT ntt_in_max_value;
+    if (overflows) {
+        ntt_in_lc.reserve(in_lc.size());
+        for (size_t i = 0; i < n; i++) {
+            ModGadget<FieldT> g(pb, in_lc[i], in_max_value, q_int);
+            g.generate_r1cs_constraints();
+            g.generate_r1cs_witness();
+            ntt_in_lc.emplace_back(g.out);
+        }
+        ntt_in_max_value = FieldT(q_int - 1);
+        max_value        = FieldT(n) * FieldT(q_int - 1) * ntt_in_max_value;
+    }
+    else {
+        // TODO: do not use copy constructor here
+        ntt_in_lc        = in_lc;
+        ntt_in_max_value = in_max_value;
+    }
+
+    vector<linear_combination<FieldT>> lc(n);
+#pragma omp parallel for default(none) shared(n, lc, ntt_in_lc, pows_int)
+    for (size_t i = 0; i < n; ++i) {
+        lc[i] = 0;
+        for (size_t j = 0; j < n; ++j) {
+            lc[i] = lc[i] + ntt_in_lc[j] * FieldT(pows_int[i][j]);
+        }
+    }
+
+    out_max_value = max_value;
+    for (size_t i = 0; i < n; ++i) {
+        auto iinv = lbcrypto::ReverseBits(i, msb);
+        out_lc[iinv].assign(pb, lc[i]);
+    }
+
+#ifdef PROOFSYSTEM_CHECK_STRICT
+    for (int i = 0; i < out_lc.size(); i++) {
+        out_lc[i].evaluate(pb);
+        assert(lt_eq(pb.lc_val(out_lc[i]), out_max_value));
+        assert(mod(pb.lc_val(out_lc[i]), FieldT(q)) == FieldT(element_out[i].template ConvertToInt<unsigned long>()));
+    }
+#endif
+}
+
+void NTTConstraint(protoboard<FieldT>& pb, const DCRTPoly::PolyType::Vector::Integer& rootOfUnity,
+                   const DCRTPoly::PolyType::Vector::Integer& modulus,
+                   const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                   vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
+                   vector<std::shared_ptr<gadget_gen<FieldT>>>& gadgets_append) {
+    auto to_append = NTTConstraint(pb, rootOfUnity, modulus, in_lc, in_max_value, out_lc, out_max_value);
+    gadgets_append.insert(gadgets_append.end(), std::make_move_iterator(to_append.begin()),
+                          std::make_move_iterator(to_append.end()));
+}
+
 void LibsnarkProofSystem::ConstrainINTT(const DCRTPoly::PolyType::Vector& rootOfUnityInverseTable,
                                         const DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
                                         const DCRTPoly::PolyType::Vector::Integer& cycloOrderInv,
@@ -1459,89 +1832,6 @@ void LibsnarkProofSystem::ConstrainSetFormat(const Format format, const DCRTPoly
         ConstrainSetFormat(format, in.GetElementAtIndex(i), out.GetElementAtIndex(i), in_lc[i], in_max_value[i],
                            out_lc[i], out_max_value[i]);
     }
-}
-
-void LibsnarkProofSystem::ConstrainRescale(const Ciphertext<DCRTPoly>& ctxt_in, Ciphertext<DCRTPoly>& ctxt_out) {
-    auto in                 = *GetProofMetadata(ctxt_in);
-    const size_t num_polys  = in.size();
-    const size_t num_levels = in[0].size();
-    assert(ctxt_in->GetElements().size() == num_polys);
-    assert(ctxt_in->GetElements()[0].GetNumOfElements() == num_levels);
-
-    LibsnarkProofMetadata out(num_polys);
-    out.modulus.resize(num_levels - 1);
-    for (size_t j = 0; j < num_levels - 1; ++j) {
-        out.modulus[j] = in.modulus[j];
-    }
-    for (size_t i = 0; i < num_polys; ++i) {
-        out[i].resize(num_levels - 1);
-        out.max_value[i].resize(num_levels - 1);
-        for (size_t j = 0; j < num_levels - 1; ++j) {
-            out[i][j]           = in[i][j];
-            out.max_value[i][j] = in.max_value[i][j];
-        }
-
-        vector<pb_linear_combination<FieldT>> last_lc;
-        FieldT last_max_value;
-        auto lastPoly = ctxt_in->GetElements()[i].GetElementAtIndex(num_levels - 1);
-        auto lastPolyCoef(lastPoly);
-        lastPolyCoef.SetFormat(Format::COEFFICIENT);
-
-        ConstrainSetFormat(Format::COEFFICIENT, lastPoly, lastPolyCoef, in[i][num_levels - 1],
-                           in.max_value[i][num_levels - 1], last_lc, last_max_value);
-
-        DCRTPoly extra(ctxt_in->GetElements()[i].GetParams(), COEFFICIENT, true);
-        vector<vector<pb_linear_combination<FieldT>>> extra_lc(extra.GetNumOfElements());
-        vector<FieldT> extra_max_value(extra.GetNumOfElements());
-        for (usint j = 0; j < extra.GetNumOfElements(); j++) {
-            auto temp         = lastPoly;
-            const auto newMod = ctxt_in->GetElements()[0].GetElementAtIndex(j).GetModulus();
-            const auto newRoU = ctxt_in->GetElements()[0].GetElementAtIndex(j).GetRootOfUnity();
-
-            temp.SwitchModulus(newMod, newRoU, 0, 0);
-            ConstrainSwitchModulus(newMod, newRoU, 0, 0, lastPoly, temp, last_lc, last_max_value, extra_lc[j],
-                                   extra_max_value[j]);
-            //            extra.m_vectors[j] = (temp *= QlQlInvModqlDivqlModq[j]);
-        }
-
-        //        if (this->GetFormat() == Format::EVALUATION)
-        //            extra.SetFormat(Format::EVALUATION);
-        auto extra_eval(extra);
-        extra_eval.SetFormat(Format::EVALUATION);
-        vector<vector<pb_linear_combination<FieldT>>> extra_eval_lc(extra.GetNumOfElements());
-        vector<FieldT> extra_eval_max_value(extra.GetNumOfElements());
-        ConstrainSetFormat(Format::EVALUATION, extra, extra_eval, extra_lc, extra_max_value, extra_eval_lc,
-                           extra_eval_max_value);
-
-        //        for (usint i = 0; i < m_vectors.size(); i++) {
-        //            m_vectors[i] *= qlInvModq[i];
-        //            m_vectors[i] += extra.m_vectors[i];
-        //        }
-
-        for (size_t j = 0; j < out[i].size(); j++) {
-            FieldT curr_max = 0;
-            for (size_t k = 0; k < out[i][j].size(); k++) {
-                LazyAddModGadget<FieldT> g(pb, out[i][j][k], out.max_value.at(i).at(j), extra_eval_lc.at(j).at(k),
-                                           extra_eval_max_value.at(j), out.modulus.at(j));
-                g.generate_r1cs_constraints();
-                g.generate_r1cs_witness();
-                out[i][j][k] = g.out;
-                if (lt(curr_max, g.out_max_value)) {
-                    curr_max = g.out_max_value;
-                }
-            }
-            out.max_value[i][j] = curr_max;
-        }
-
-        //        this->SetFormat(Format::EVALUATION);
-        assert(ctxt_out->GetElements()[i].GetFormat() == Format::EVALUATION);
-        //        auto curr_eval(ctxt_out->GetElements()[i]);
-        //        curr_eval.SetFormat(Format::EVALUATION);
-        //        ConstrainSetFormat(Format::EVALUATION, ctxt_out->GetElements()[i], curr_eval, out[i], out.max_value[i], out[i],
-        //                           out.max_value[i]);
-    }
-
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
 }
 
 void LibsnarkProofSystem::ConstrainKeySwitchPrecomputeCore(
@@ -1891,175 +2181,21 @@ void LibsnarkProofSystem::ConstrainFastKeySwitchCore(
     }
 }
 
-void LibsnarkProofSystem::ConstrainKeySwitch(const Ciphertext<DCRTPoly>& ctxt_in, const EvalKey<DCRTPoly>& ek,
-                                             Ciphertext<DCRTPoly>& ctxt_out) {
-    assert(ctxt_in->GetElements().size() == 2);
-    auto in = *GetProofMetadata(ctxt_in);
-
-    std::vector<DCRTPoly>& cv = ctxt_in->GetElements();
-
-    //    std::shared_ptr<std::vector<DCRTPoly>> ba = KeySwitchCore(cv[1], ek) ;
-    auto a                                        = cv[1];
-    const auto cryptoParamsBase                   = ek->GetCryptoParameters();
-    std::shared_ptr<std::vector<DCRTPoly>> digits = KeySwitchBV().EvalKeySwitchPrecomputeCore(a, cryptoParamsBase);
-    vector<vector<vector<pb_linear_combination<FieldT>>>> digits_lc;
-    vector<vector<FieldT>> digits_max_value;
-    ConstrainKeySwitchPrecomputeCore(a, cryptoParamsBase, digits, in[1], in.max_value[1], digits_lc, digits_max_value);
-
-    std::shared_ptr<std::vector<DCRTPoly>> result = KeySwitchBV().EvalFastKeySwitchCore(digits, ek, a.GetParams());
-    vector<vector<vector<pb_linear_combination<FieldT>>>> out_lc;
-    vector<vector<FieldT>> out_max_value;
-    ConstrainFastKeySwitchCore(digits, ek, a.GetParams(), result, digits_lc, digits_max_value, out_lc, out_max_value);
-    LibsnarkProofMetadata out(out_lc);
-    out.max_value = out_max_value;
-    out.modulus   = out.modulus;
-
-    auto ba = digits;
-    assert(cv[0].GetFormat() == (*ba)[0].GetFormat());
-    //    cv[0] += (*ba)[0];
-    for (size_t j = 0; j < out[0].size(); j++) {
-        for (size_t k = 0; k < out[0][j].size(); k++) {
-            LazyAddModGadget<FieldT> g(pb, out[0][j][k], out.max_value[0][j], in[0][j][k], in.max_value[0][j],
-                                       in.modulus[j]);
-        }
-    }
-
-    assert(cv[1].GetFormat() == (*ba)[1].GetFormat());
-    //    if (cv.size() > 2) {
-    //        cv[1] += (*ba)[1];
-    //    }
-    //    else {
-    cv[1] = (*ba)[1];
-    //    }
-
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
+// TODO
+LibsnarkConstraintMetadata LibsnarkProofSystem::EncryptConstraint(Plaintext plaintext, PublicKey<DCRTPoly> publicKey) {
+    return LibsnarkConstraintMetadata();
 }
 
-void LibsnarkProofSystem::ConstrainRelin(const Ciphertext<DCRTPoly>& ciphertext, Ciphertext<DCRTPoly>& out) {
-    assert(!!ciphertext);
-    assert(!!out);
+// TODO
+void LibsnarkProofSystem::EncryptWitness(Plaintext plaintext, PublicKey<DCRTPoly> publicKey,
+                                         ConstCiphertext<DCRTPoly> ciphertext) {}
 
-    const LibsnarkProofMetadata in = *(GetProofMetadata(ciphertext));
-    const size_t num_poly          = ciphertext->GetElements().size();
-    const size_t num_limbs         = ciphertext->GetElements()[0].GetNumOfElements();
-    assert(num_poly == 3);  // We don't support higher-order relin
-    assert(in.size() == num_poly);
-    assert(in[0].size() == num_limbs);
-    assert(out->GetElements()[0].GetNumOfElements() == num_limbs);
+// TODO
+void LibsnarkProofSystem::EncryptConstraint(Plaintext plaintext, ProofSystem::DoublePublicKey<DCRTPoly> publicKey,
+                                            ProofSystem::DoubleCiphertext<DCRTPoly> ciphertext) {}
 
-    LibsnarkProofMetadata out_metadata(2);
-
-    const auto evalKeyVec = cryptoContext->GetEvalMultKeyVector(ciphertext->GetKeyTag());
-    assert(evalKeyVec.size() >= (ciphertext->GetElements().size() - 2));
-
-    const auto cv = ciphertext->GetElements();
-    for (auto& c : cv) {
-        assert(c.GetFormat() == Format::EVALUATION);  // Should always hold for BGV, no need to constrain
-        // c.SetFormat(Format::EVALUATION);
-    }
-
-    auto algo = ciphertext->GetCryptoContext()->GetScheme();
-
-    out_metadata           = LibsnarkProofMetadata(2);
-    out_metadata[0]        = in[0];
-    out_metadata[1]        = in[1];
-    out_metadata.max_value = {in.max_value[0], in.max_value[1]};
-    out_metadata.modulus   = in.modulus;
-
-    for (size_t j = 2; j < num_poly; j++) {
-        //        auto ab      = algo->KeySwitchCore(cv[j], evalKeyVec[j - 2]);
-        auto evalKey = evalKeyVec[j - 2];
-
-        const auto cryptoParamsBase = evalKey->GetCryptoParameters();
-        std::shared_ptr<std::vector<DCRTPoly>> digits =
-            KeySwitchBV().EvalKeySwitchPrecomputeCore(cv[j], cryptoParamsBase);
-
-        vector<vector<vector<pb_linear_combination<FieldT>>>> tmp_lc;
-        vector<vector<FieldT>> tmp_max_value;
-        ConstrainKeySwitchPrecomputeCore(cv[j], evalKey->GetCryptoParameters(), digits, in[j], in.max_value[j], tmp_lc,
-                                         tmp_max_value);
-
-        std::shared_ptr<std::vector<DCRTPoly>> result =
-            KeySwitchBV().EvalFastKeySwitchCore(digits, evalKey, cv[j].GetParams());
-        vector<vector<vector<pb_linear_combination<FieldT>>>> tmp2_lc;
-        vector<vector<FieldT>> tmp2_max_value;
-        ConstrainFastKeySwitchCore(digits, evalKey, cv[j].GetParams(), result, tmp_lc, tmp_max_value, tmp2_lc,
-                                   tmp2_max_value);
-
-        //        cv[0] += (*ab)[0];
-        //        cv[1] += (*ab)[1];
-        LibsnarkProofMetadata tmp_metadata(tmp2_lc);
-        tmp_metadata.max_value = tmp2_max_value;
-        tmp_metadata.modulus   = in.modulus;
-        constrain_addmod_lazy(out_metadata, 0, tmp_metadata, 0, out_metadata, 0);
-        constrain_addmod_lazy(out_metadata, 1, tmp_metadata, 1, out_metadata, 1);
-    }
-
-    SetProofMetadata(out, std::make_shared<LibsnarkProofMetadata>(out_metadata));
-}
-
-void LibsnarkProofSystem::ConstrainRotate(const Ciphertext<DCRTPoly>& ciphertext, const int rot_idx,
-                                          Ciphertext<DCRTPoly>& ctxt_out) {
-    auto in = *GetProofMetadata(ciphertext);
-
-    auto index    = rot_idx;
-    const auto cc = ciphertext->GetCryptoContext();
-
-    auto evalKeyMap = cc->GetEvalAutomorphismKeyMap(ciphertext->GetKeyTag());
-    //    return GetScheme()->EvalAtIndex(ciphertext, index, evalKeyMap);
-
-    usint M = ciphertext->GetCryptoParameters()->GetElementParams()->GetCyclotomicOrder();
-
-    auto algo          = ciphertext->GetCryptoContext()->GetScheme();
-    uint32_t autoIndex = FindAutomorphismIndex2n(index, M);  // TODO: use scheme stored in ctxt instead
-
-    //    return EvalAutomorphism(ciphertext, autoIndex, evalKeyMap);
-
-    auto i   = autoIndex;
-    auto key = evalKeyMap.find(i);
-    assert(key != evalKeyMap.end());
-
-    //    if (key == evalKeyMap.end()) {
-    //        std::string errorMsg(std::string("Could not find an EvalKey for index ") + std::to_string(i) + CALLER_INFO);
-    //        OPENFHE_THROW(type_error, errorMsg);
-    //    }
-
-    auto evalKey = key->second;
-
-    //    CheckKey(evalKey);
-
-    //    return GetScheme()->EvalAutomorphism(ciphertext, i, evalKeyMap);
-
-    auto evalKeyIterator = evalKeyMap.find(i);
-    assert(evalKeyIterator != evalKeyMap.end());
-    using Element                  = DCRTPoly;
-    const std::vector<Element>& cv = ciphertext->GetElements();
-    usint N                        = cv[0].GetRingDimension();
-
-    std::vector<usint> vec(N);
-    PrecomputeAutoMap(N, i, &vec);
-
-    //    auto algo = ciphertext->GetCryptoContext()->GetScheme();
-
-    Ciphertext<Element> result = ciphertext->Clone();
-
-    auto old(result);
-    algo->KeySwitchInPlace(result, evalKeyIterator->second);
-    ConstrainKeySwitch(old, evalKeyIterator->second, result);
-
-    //    rcv[0] = rcv[0].AutomorphismTransform(i, vec);
-    //    rcv[1] = rcv[1].AutomorphismTransform(i, vec);
-    auto precomp = vec;
-    LibsnarkProofMetadata out(in);
-    for (size_t i = 0; i < out.size(); i++) {
-        for (size_t j = 0; j < out[0].size(); ++j) {
-            for (size_t k = 0; k < out[0][0].size(); ++k) {
-                out[i][j][k] = out[i][j][precomp[k]];
-            }
-        }
-    }
-
-    SetProofMetadata(ctxt_out, std::make_shared<LibsnarkProofMetadata>(out));
-}
+// TODO
+void LibsnarkProofSystem::EncryptWitness(Plaintext plaintext, ProofSystem::DoublePublicKey<DCRTPoly> publicKey,
+                                         ProofSystem::DoubleCiphertext<DCRTPoly> ciphertext) {}
 
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_CPP

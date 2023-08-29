@@ -8,8 +8,6 @@
 #include <vector>
 #include <cassert>
 
-#define LIBSNARK_PROOF_METADATA_KEY "libsnark_proof_metadata"
-
 using namespace libsnark;
 using std::cout, std::endl;
 using std::vector;
@@ -17,8 +15,12 @@ using std::vector;
 template <typename FieldT>
 class gadget_gen : public libsnark::gadget<FieldT> {
 public:
+    gadget_gen()                                = default;  // Needed to use vector<unique_ptr<gadget_gen<FieldT>>>
+    gadget_gen(const gadget_gen<FieldT>& other) = default;
+    gadget_gen(gadget_gen<FieldT>&& other)      = default;
     gadget_gen(protoboard<FieldT>& pb, const std::string& annotation_prefix = "")
         : libsnark::gadget<FieldT>(pb, annotation_prefix) {}
+    virtual ~gadget_gen() = default;
 
     virtual void generate_r1cs_constraints() const = 0;
     virtual void generate_r1cs_witness() const     = 0;
@@ -455,7 +457,7 @@ public:
             out_max_value = FieldT(modulus) - 1;
         }
         else {
-            // substraction would not overflow field modulus, reduce later
+            // subtraction would not overflow field modulus, reduce later
             out.assign(pb, in1 + FieldT(modulus) - in2);
             out_max_value = in1_max_value + FieldT(modulus);
         }
@@ -594,8 +596,10 @@ public:
 };
 
 template <typename FieldT, typename Gadget>
-class BatchGadget : gadget_gen<FieldT> {
+class BatchGadget : public gadget_gen<FieldT> {
 public:
+    static_assert(std::is_base_of<gadget_gen<FieldT>, Gadget>::value, "Gadget is not derived from gadget_gen<FieldT>");
+
     vector<Gadget> gadgets;
 
     BatchGadget(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& in, const FieldT in_max_value,

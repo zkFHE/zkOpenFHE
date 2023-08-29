@@ -123,7 +123,7 @@ int main() {
     cryptoContext->Decrypt(keyPair.secretKey, out, &result);
 
     // Do it all again with the ZKP
-    LibsnarkProofSystem ps(cryptoContext);
+    LibsnarkProofSystem ps(nullptr, cryptoContext);
     for (size_t i = 0; i < num_features; ++i) {
         ps.ConstrainPublicInput(client_in_1[i]);
         ps.ConstrainPublicInput(client_in_2[i]);
@@ -133,9 +133,9 @@ int main() {
     // Product
     //    auto prod = cryptoContext->EvalMult(client_in, server_in);
     for (size_t i = 0; i < num_features; ++i) {
-        ps.ConstrainMultiplication(client_in_1[i], client_in_2[i], prod[i]);
+        ps.EvalMultNoRelin(client_in_1[i], client_in_2[i], prod[i]);
         if (i > 0) {
-            ps.ConstrainAddition(aggs[i - 1], prod[i], aggs[i]);
+            ps.EvalAdd(aggs[i - 1], prod[i], aggs[i]);
         }
     }
     cout << "prod := client_in * server_in" << endl;

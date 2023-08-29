@@ -209,7 +209,7 @@ void ptxt_general_matrix_enc_vector_product_zkp(LibsnarkProofSystem& ps, const C
         // auto tmp = mult(diagonals[i], rotated_v);
         Plaintext ptxt_current_diagonal = cryptoContext->MakeCKKSPackedPlaintext(diagonals[i]);
         Ciphertext<DCRTPoly> ctxt_tmp   = cryptoContext->EvalMult(ctxt_rotated_v, ptxt_current_diagonal);
-        ps.ConstrainMultiplication(ctxt_rotated_v, ptxt_current_diagonal, ctxt_tmp);
+        ps.EvalMultNoRelin(ctxt_rotated_v, ptxt_current_diagonal, ctxt_tmp);
 
         // t = add(t, tmp);
         if (i == 0) {
@@ -218,7 +218,7 @@ void ptxt_general_matrix_enc_vector_product_zkp(LibsnarkProofSystem& ps, const C
         else {
             auto old(ctxt_t);
             ctxt_t = cryptoContext->EvalAdd(ctxt_t, ctxt_tmp);
-            ps.ConstrainAddition(old, ctxt_tmp, ctxt_t);
+            ps.EvalAdd(old, ctxt_tmp, ctxt_t);
         }
     }
 
@@ -240,7 +240,7 @@ void ptxt_general_matrix_enc_vector_product_zkp(LibsnarkProofSystem& ps, const C
         // r = add(r, rotated_r);
         old    = ctxt_r;
         ctxt_r = cryptoContext->EvalAdd(ctxt_r, ctxt_rotated_r);
-        ps.ConstrainAddition(old, ctxt_rotated_r, ctxt_r);
+        ps.EvalAdd(old, ctxt_rotated_r, ctxt_r);
     }
     //  r.resize(m); <- has to be done by the client
     // for efficiency we do not mask away the other entries
@@ -426,7 +426,7 @@ int main() {
      */
 
     // Inputs
-    LibsnarkProofSystem ps(cryptoContext);
+    LibsnarkProofSystem ps(nullptr, cryptoContext);
     ps.ConstrainPublicInput(image_ctxt);
     auto vars_out = ps.ConstrainPublicOutput(out);
 
@@ -442,14 +442,14 @@ int main() {
     ps.ConstrainRescale(mvb_1, mvb_1_rescaled);
 
     // Activation
-    ps.ConstrainMultiplication(mvb_1_rescaled, mvb_1_rescaled, h1_sq);
+    ps.EvalMultNoRelin(mvb_1_rescaled, mvb_1_rescaled, h1_sq);
     ps.ConstrainRelin(h1_sq, h1_sq_relin);
     ps.ConstrainRescale(h1_sq_relin, h1_sq_rescaled);
 
     // Masking
-    ps.ConstrainMultiplication(h1_sq_rescaled, mask, masked);
+    ps.EvalMultNoRelin(h1_sq_rescaled, mask, masked);
     ps.ConstrainRotate(masked, d1.units(), tmp);
-    ps.ConstrainAddition(tmp, result, tmp_agg);
+    ps.EvalAdd(tmp, result, tmp_agg);
     ps.ConstrainRescale(tmp_agg, in2);
 
     // Layer 2

@@ -139,7 +139,7 @@ int main() {
     cryptoContext->Decrypt(keyPair.secretKey, out, &result);
 
     // Do it all again with the ZKP
-    LibsnarkProofSystem ps(cryptoContext);
+    LibsnarkProofSystem ps(nullptr, cryptoContext);
     ps.SetMode(PROOFSYSTEM_MODE::PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
     ps.ConstrainPublicInput(client_in_1);
     ps.ConstrainPublicInput(client_in_2);
@@ -147,7 +147,7 @@ int main() {
 
     // Product
     //    auto prod = cryptoContext->EvalMult(client_in, server_in);
-    ps.ConstrainMultiplication(client_in_1, client_in_2, prod);
+    ps.EvalMultNoRelin(client_in_1, client_in_2, prod);
     ps.ConstrainRelin(prod, relined);
     cout << "prod := client_in * server_in" << endl;
     print(ps);
@@ -163,7 +163,7 @@ int main() {
         //        rots[i]     = cryptoContext->EvalRotate(rots[i-1], rot_amt);
         ps.ConstrainRotate(aggs[i - 1], rot_amt, rots[i]);
         //        aggs[i]     = cryptoContext->EvalAdd(rots[i - 1], rots[i]);
-        ps.ConstrainAddition(rots[i - 1], rots[i], aggs[i]);
+        ps.EvalAdd(rots[i - 1], rots[i], aggs[i]);
         cout << "ag_" << i << " := rot(prod, 2^" << i << ") + ag_" << i - 1 << endl;
     }
     print(ps);
@@ -176,7 +176,7 @@ int main() {
     cout << "approximation_degree = " << approximation_degree << " = 2^" << log_approximation_degree << endl;
     for (size_t i = 1; i <= log_approximation_degree; i++) {
         //        pows[i] = cryptoContext->EvalSquare(sigs[i - 1]);
-        ps.ConstrainMultiplication(sigs[i - 1], sigs[i - 1], pows[i]);
+        ps.EvalMultNoRelin(sigs[i - 1], sigs[i - 1], pows[i]);
         //        sigs[i] = cryptoContext->Relinearize(pows[i]);
         ps.ConstrainRelin(pows[i], sigs[i]);
         cout << "sg_" << i << " := relin(sg_" << i - 1 << "^2)" << endl;

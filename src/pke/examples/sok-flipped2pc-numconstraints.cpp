@@ -165,7 +165,7 @@ int main() {
     c_out_blinded = cryptoContext->EvalMult(c_prox, client_random_blinding);
     output        = c_out_blinded;  //cryptoContext->EvalAdd(c_out_blinded, client_noiseflooding_0);
 
-    LibsnarkProofSystem ps(cryptoContext);
+    LibsnarkProofSystem ps(nullptr, cryptoContext);
 
     ps.ConstrainPublicInput(server_pos_i);
     ps.ConstrainPublicInput(server_pos_j);
@@ -182,13 +182,13 @@ int main() {
     //        auto d_i_min_d_j         = cryptoContext->EvalSub(d_i, d_j);
     ps.ConstrainSubstraction(d_i, d_j, d_i_min_d_j);
     //        auto d_i_min_d_j_squared = cryptoContext->EvalSquare(d_i_min_d_j);
-    ps.ConstrainMultiplication(d_i_min_d_j, d_i_min_d_j, d_i_min_d_j_squared);
+    ps.EvalMultNoRelin(d_i_min_d_j, d_i_min_d_j, d_i_min_d_j_squared);
     //        auto d_i_mul_d_j         = cryptoContext->EvalMult(d_i, d_j);
-    ps.ConstrainMultiplication(d_i, d_j, d_i_mul_d_j);
+    ps.EvalMultNoRelin(d_i, d_j, d_i_mul_d_j);
     print(ps);
 
     //        auto c_dist = cryptoContext->EvalAdd(d_i_min_d_j_squared, d_i_mul_d_j);
-    ps.ConstrainAddition(d_i_min_d_j_squared, d_i_mul_d_j, c_dist);
+    ps.EvalAdd(d_i_min_d_j_squared, d_i_mul_d_j, c_dist);
     // Unclear of where relinearization should happen from the description in the PROTECT paper, we put it here as it makes the most sense
     //        auto c_dist_relin = cryptoContext->Relinearize(c_dist);
     ps.ConstrainRelin(c_dist, c_dist_relin);
@@ -197,11 +197,11 @@ int main() {
     //        auto c_dist_squared_min_one = cryptoContext->EvalSub(c_dist_relin, one);
     ps.ConstrainSubstraction(c_dist_relin, one, c_dist_squared_min_one);
     //        auto c_prox                 = cryptoContext->EvalMult(c_dist, c_dist_squared_min_one);
-    ps.ConstrainMultiplication(c_dist_relin, c_dist_squared_min_one, c_prox);
+    ps.EvalMultNoRelin(c_dist_relin, c_dist_squared_min_one, c_prox);
     print(ps);
 
     //        auto c_out_blinded = cryptoContext->EvalMult(c_prox, client_random_blinding);
-    ps.ConstrainMultiplication(c_prox, client_random_blinding, c_out_blinded);
+    ps.EvalMultNoRelin(c_prox, client_random_blinding, c_out_blinded);
     //        output = cryptoContext->EvalAdd(c_out_blinded, client_noiseflooding_0);
     //    ps.ConstrainMultiplication(c_out_blinded, client_noiseflooding_0, output);
     print(ps);
