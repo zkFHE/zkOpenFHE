@@ -131,8 +131,8 @@ TEST(libsnark_openfhe_gadgets, ntt) {
         crt.PreCompute(rootOfUnity, CycloOrder, modulus);
     }
 
-    auto in_lc        = (*LibsnarkProofSystem::GetProofMetadata(ctxt))[0][0];
-    auto in_max_value = (*LibsnarkProofSystem::GetProofMetadata(ctxt)).max_value[0][0];
+    auto in_lc        = LibsnarkProofSystem::GetMetadata(ctxt)[0][0];
+    auto in_max_value = LibsnarkProofSystem::GetMetadata(ctxt).max_value[0][0];
     for (size_t i = 0; i < in_0_0.GetLength(); ++i) {
         ps.pb.lc_val(in_lc[i]) = FieldT(in_0_0[i].Mod(modulus).ConvertToInt());
     }
@@ -201,8 +201,8 @@ TEST(libsnark_openfhe_gadgets, ntt_opt) {
         crt.PreCompute(rootOfUnity, CycloOrder, modulus);
     }
 
-    auto in_lc        = (*LibsnarkProofSystem::GetProofMetadata(ctxt))[0][0];
-    auto in_max_value = (*LibsnarkProofSystem::GetProofMetadata(ctxt)).max_value[0][0];
+    auto in_lc        = LibsnarkProofSystem::GetMetadata(ctxt)[0][0];
+    auto in_max_value = LibsnarkProofSystem::GetMetadata(ctxt).max_value[0][0];
     for (size_t i = 0; i < in_0_0.GetLength(); ++i) {
         ps.pb.lc_val(in_lc[i]) = FieldT(in_0_0[i].Mod(modulus).ConvertToInt());
     }
@@ -272,8 +272,8 @@ TEST(libsnark_openfhe_gadgets, intt) {
 
     usint msb = lbcrypto::GetMSB64(CycloOrderHf - 1);
 
-    auto in_lc        = (*LibsnarkProofSystem::GetProofMetadata(ctxt))[0][0];
-    auto in_max_value = (*LibsnarkProofSystem::GetProofMetadata(ctxt)).max_value[0][0];
+    auto in_lc        = LibsnarkProofSystem::GetMetadata(ctxt)[0][0];
+    auto in_max_value = LibsnarkProofSystem::GetMetadata(ctxt).max_value[0][0];
     for (size_t i = 0; i < out_0_0.GetLength(); ++i) {
         assert(ps.pb.lc_val(in_lc[i]) == FieldT(in_0_0[i].Mod(modulus).ConvertToInt()));
     }
@@ -329,7 +329,7 @@ TEST(libsnark_openfhe_gadgets, set_format) {
 
     LibsnarkProofSystem ps(cryptoContext);
     ps.PublicInput(ctxt);
-    LibsnarkConstraintMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+    LibsnarkConstraintMetadata in_metadata = LibsnarkProofSystem::GetMetadata(ctxt);
 
     auto in_lc          = in_metadata[0][0];
     FieldT in_max_value = in_metadata.max_value[0][0];
@@ -386,7 +386,7 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
 
     LibsnarkProofSystem ps(cryptoContext);
     ps.PublicInput(ctxt);
-    LibsnarkConstraintMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+    LibsnarkConstraintMetadata in_metadata = LibsnarkProofSystem::GetMetadata(ctxt);
 
     auto in_lc        = in_metadata[0][0];
     auto in_max_value = in_metadata.max_value[0][0];
@@ -438,7 +438,7 @@ TEST(libsnark_openfhe_gadgets, key_switch_precompute_core) {
 
     LibsnarkProofSystem ps(cryptoContext);
     ps.PublicInput(ctxt);
-    LibsnarkConstraintMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+    LibsnarkConstraintMetadata in_metadata = LibsnarkProofSystem::GetMetadata(ctxt);
 
     const auto in_lc        = in_metadata[0];
     const auto in_max_value = in_metadata.max_value[0];
@@ -501,7 +501,7 @@ TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
 
     LibsnarkProofSystem ps(cryptoContext);
     //    ps.PublicInput(ctxt);
-    //    LibsnarkConstraintMetadata in_metadata = *LibsnarkProofSystem::GetProofMetadata(ctxt);
+    //    LibsnarkConstraintMetadata in_metadata = LibsnarkProofSystem::GetMetadata(ctxt);
 
     vector<vector<vector<pb_linear_combination<FieldT>>>> in_lc((*digits).size());
     vector<vector<FieldT>> in_max_value((*digits).size());
@@ -577,7 +577,7 @@ TEST(libsnark_openfhe_gadgets, add) {
 
     ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
     auto out     = eval(ctxt1, ctxt2);
-    out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    out_metadata = LibsnarkProofSystem::GetMetadata(out);
 
     print_stats(ps.pb);
 
@@ -631,7 +631,7 @@ TEST(libsnark_openfhe_gadgets, add_plain) {
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkConstraintMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    LibsnarkConstraintMetadata out_metadata = LibsnarkProofSystem::GetMetadata(out);
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =
@@ -676,7 +676,7 @@ TEST(libsnark_openfhe_gadgets, sub) {
 
     ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
     auto out     = eval(ctxt1, ctxt2);
-    out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    out_metadata = LibsnarkProofSystem::GetMetadata(out);
 
     auto pb = ps.pb;
 
@@ -731,7 +731,7 @@ TEST(libsnark_openfhe_gadgets, sub_plain) {
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkConstraintMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    LibsnarkConstraintMetadata out_metadata = LibsnarkProofSystem::GetMetadata(out);
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =
@@ -776,7 +776,7 @@ TEST(libsnark_openfhe_gadgets, rescale) {
 
     ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
     auto out     = eval(ctxt);
-    out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    out_metadata = LibsnarkProofSystem::GetMetadata(out);
 
     auto pb = ps.pb;
 
@@ -832,7 +832,7 @@ TEST(libsnark_openfhe_gadgets, rotation) {
 
     ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
     auto out     = eval(ctxt1);
-    out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    out_metadata = LibsnarkProofSystem::GetMetadata(out);
 
     auto pb = ps.pb;
 
@@ -887,7 +887,7 @@ TEST(libsnark_openfhe_gadgets, mult) {
 
     ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
     auto out          = eval(ctxt1, ctxt2);
-    auto out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    auto out_metadata = LibsnarkProofSystem::GetMetadata(out);
 
     print_stats(ps.pb);
 
@@ -944,7 +944,7 @@ TEST(libsnark_openfhe_gadgets, mult_plain) {
 
     EXPECT_EQ(pb.is_satisfied(), true);
 
-    LibsnarkConstraintMetadata out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    LibsnarkConstraintMetadata out_metadata = LibsnarkProofSystem::GetMetadata(out);
     for (size_t i = 0; i < out_metadata.size(); ++i) {
         for (size_t j = 0; j < out_metadata[i].size(); ++j) {
             auto q =
@@ -988,7 +988,7 @@ TEST(libsnark_openfhe_gadgets, square) {
 
     ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
     auto out          = eval(ctxt1);
-    auto out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    auto out_metadata = LibsnarkProofSystem::GetMetadata(out);
 
     print_stats(ps.pb);
 
@@ -1043,7 +1043,7 @@ TEST(libsnark_openfhe_gadgets, relin) {
 
     LibsnarkProofSystem ps(cryptoContext);
     ps.PublicInput(in);
-    LibsnarkConstraintMetadata in_metadata = *(LibsnarkProofSystem::GetProofMetadata(in));
+    LibsnarkConstraintMetadata in_metadata = LibsnarkProofSystem::GetMetadata(in);
 
     cout << "in.GetNumOfElements() = " << in->GetElements()[0].GetNumOfElements() << endl;
     auto eval = [&](Ciphertext<DCRTPoly> ctxt1) {
@@ -1053,7 +1053,7 @@ TEST(libsnark_openfhe_gadgets, relin) {
 
     ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
     auto out          = eval(ctxt1);
-    auto out_metadata = *(LibsnarkProofSystem::GetProofMetadata(out));
+    auto out_metadata = LibsnarkProofSystem::GetMetadata(out);
 
     print_stats(ps.pb);
 

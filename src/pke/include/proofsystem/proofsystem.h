@@ -14,7 +14,9 @@ using namespace lbcrypto;
 
 class ProofsystemMetadata : public Metadata {
 public:
-    const static std::string key;
+    static std::string GetKey() {
+        return std::string("proofsystem_metadata_") + typeid(ProofsystemMetadata).name();
+    };
 };
 
 enum PROOFSYSTEM_MODE {
@@ -38,7 +40,7 @@ class ProofSystem : public CryptoContextImpl<Element> {
                   "ConstraintMetadata is not derived from ProofsystemMetadata");
 
 protected:
-    virtual WireID GetWireId(ConstCiphertext<Element>& ciphertext) {
+    virtual WireID GetWireId(ConstCiphertext<Element>& ciphertext) const {
         auto it = ciphertext->FindMetadataByKey(PROOFSYSTEM_WIREID_METADATA_KEY);
         if (ciphertext->MetadataFound(it)) {
             auto res = std::dynamic_pointer_cast<WireIdMetadata>(ciphertext->GetMetadata(it));
@@ -49,15 +51,17 @@ protected:
         }
     }
 
-    virtual void SetWireId(Ciphertext<Element>& ciphertext, const WireID& wire_id) {
+    virtual void SetWireId(Ciphertext<Element>& ciphertext, const WireID& wire_id) const {
         ciphertext->SetMetadataByKey(PROOFSYSTEM_WIREID_METADATA_KEY,
                                      std::make_shared<WireIdMetadata>(WireIdMetadata(wire_id)));
     }
 
+    virtual size_t GetGlobalWireId()                  = 0;
+    virtual void SetGlobalWireId(size_t globalWireId) = 0;
+
 public:
     const CryptoContext<Element> cc;
     PROOFSYSTEM_MODE mode = PROOFSYSTEM_MODE_EVALUATION;
-    static size_t global_wire_id;
 
     template <typename E>
     using DoubleCiphertext = std::pair<Ciphertext<E>, Ciphertext<E>>;
@@ -71,33 +75,42 @@ public:
         this->mode = mode_;
     }
 
-    static size_t get_next_wire_id() {
-        return global_wire_id++;
-    }
+    virtual size_t GetNextWireId() = 0;
 
     virtual std::shared_ptr<CryptoContextImpl<Element>> GetCryptoContext() const {
         return cc;
     }
 
     static void SetMetadata(Ciphertext<Element>& ciphertext, const std::shared_ptr<ConstraintMetadata>& metadata) {
-        ciphertext->SetMetadataByKey(metadata.key, metadata);
+        ciphertext->SetMetadataByKey(metadata.GetKey(), metadata);
     }
 
     static void SetMetadata(Ciphertext<Element>& ciphertext, const ConstraintMetadata& metadata) {
-        ciphertext->SetMetadataByKey(metadata.key, std::make_shared<ConstraintMetadata>(metadata));
+        ciphertext->SetMetadataByKey(metadata.GetKey(), std::make_shared<ConstraintMetadata>(metadata));
     }
 
-//    static std::shared_ptr<ConstraintMetadata> GetMetadata(ConstCiphertext<Element>& ciphertext) {
-//        auto it = ciphertext->FindMetadataByKey(ConstraintMetadata::key);
-//        if (ciphertext->MetadataFound(it)) {
-//            return std::dynamic_pointer_cast<ConstraintMetadata>(ciphertext->GetMetadata(it));
-//        }
-//        else {
-//            throw std::logic_error("Attempt to access metadata (ConstraintMetadata) that has not been set.");
-//        }
-//    }
+    //    static std::shared_ptr<ConstraintMetadata> GetMetadata(ConstCiphertext<Element>& ciphertext) {
+    //        auto it = ciphertext->FindMetadataByKey(ConstraintMetadata::key);
+    //        if (ciphertext->MetadataFound(it)) {
+    //            return std::dynamic_pointer_cast<ConstraintMetadata>(ciphertext->GetMetadata(it));
+    //        }
+    //        else {
+    //            throw std::logic_error("Attempt to access metadata (ConstraintMetadata) that has not been set.");
+    //        }
+    //    }
+
+    static ConstraintMetadata GetMetadata(Ciphertext<Element>& ciphertext) {
+        auto it = ciphertext->FindMetadataByKey(ConstraintMetadata::GetKey());
+        if (ciphertext->MetadataFound(it)) {
+            return *std::dynamic_pointer_cast<ConstraintMetadata>(ciphertext->GetMetadata(it));
+        }
+        else {
+            throw std::logic_error("Attempt to access metadata (ConstraintMetadata) that has not been set.");
+        }
+    }
+
     static ConstraintMetadata GetMetadata(ConstCiphertext<Element>& ciphertext) {
-        auto it = ciphertext->FindMetadataByKey(ConstraintMetadata::key);
+        auto it = ciphertext->FindMetadataByKey(ConstraintMetadata::GetKey());
         if (ciphertext->MetadataFound(it)) {
             return *std::dynamic_pointer_cast<ConstraintMetadata>(ciphertext->GetMetadata(it));
         }
@@ -110,7 +123,7 @@ public:
     virtual void PublicInputWitness(ConstCiphertext<Element> ciphertext)                  = 0;
 
     void PublicInput(Ciphertext<Element>& ciphertext) {
-        SetWireId(ciphertext, "PublicCtxt(" + std::to_string(this->get_next_wire_id()) + ")");
+        SetWireId(ciphertext, "PublicCtxt(" + std::to_string(this->GetNextWireId()) + ")");
         ConstraintMetadata m;
         switch (mode) {
             case PROOFSYSTEM_MODE_EVALUATION:
@@ -134,7 +147,7 @@ public:
 
     Ciphertext<Element> Encrypt(Plaintext plaintext, const PublicKey<Element> publicKey) {
         Ciphertext<Element> ciphertext = cc->Encrypt(plaintext, publicKey);
-        SetWireId(ciphertext, "Enc(" + std::to_string(this->get_next_wire_id()) + ")");
+        SetWireId(ciphertext, "Enc(" + std::to_string(this->GetNextWireId()) + ")");
         ConstraintMetadata m;
         switch (mode) {
             case PROOFSYSTEM_MODE_EVALUATION:
@@ -161,8 +174,8 @@ public:
     DoubleCiphertext<Element> Encrypt(Plaintext plaintext, const DoublePublicKey<Element> publicKey) const {
         const DoubleCiphertext<Element> ciphertext(cc->Encrypt(plaintext, publicKey.first),
                                                    cc->Encrypt(plaintext, publicKey.second));
-        SetWireId(ciphertext.first, "Enc_1(" + std::to_string(this->get_next_wire_id()) + ")");
-        SetWireId(ciphertext.second, "Enc_2(" + std::to_string(this->get_next_wire_id()) + ")");
+        SetWireId(ciphertext.first, "Enc_1(" + std::to_string(this->GetNextWireId()) + ")");
+        SetWireId(ciphertext.second, "Enc_2(" + std::to_string(this->GetNextWireId()) + ")");
         switch (mode) {
             case PROOFSYSTEM_MODE_EVALUATION:
                 return ciphertext;
@@ -306,7 +319,7 @@ public:
     virtual ConstraintMetadata EvalRotateConstraint(ConstCiphertext<Element> ciphertext, int rot_idx,
                                                     ConstCiphertext<Element> ctxt_out) = 0;
     virtual void EvalRotateWitness(ConstCiphertext<Element> ciphertext, int rot_idx,
-                                   ConstCiphertext<Element> ctxt_out)                   = 0;
+                                   ConstCiphertext<Element> ctxt_out)                  = 0;
 
     Ciphertext<Element> EvalRotate(ConstCiphertext<Element> ctxt, int rot_idx) {
         auto ctxt_out = GetCryptoContext()->EvalRotate(ctxt, rot_idx);

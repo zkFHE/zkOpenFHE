@@ -50,6 +50,10 @@ public:
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::push_back;
     using vector<vector<vector<pb_linear_combination<FieldT>>>>::emplace_back;
 
+    static std::string GetKey() {
+        return std::string("proofsystem_metadata_") + typeid(LibsnarkConstraintMetadata).name();
+    };
+
     inline size_t get_bit_size(size_t i, size_t j) const {
         return max_value[i][j].as_bigint().num_bits();
     }
@@ -64,7 +68,6 @@ public:
         return (n1 == m1) && (n2 == m2) && (n3 == m3);
     }
 };
-const std::string LibsnarkConstraintMetadata::ProofsystemMetadata::key = std::string("libsnark_proof_metadata");
 
 class LibsnarkProofSystem : public ProofSystem<DCRTPoly, LibsnarkConstraintMetadata> {
 protected:
@@ -88,6 +91,10 @@ protected:
                                const LibsnarkConstraintMetadata& in2, size_t index_2, LibsnarkConstraintMetadata& out,
                                size_t index_out, vector<std::shared_ptr<gadget_gen<FieldT>>>& gadgets_append);
     std::unordered_map<WireID, LibsnarkWitnessMetadata> wire_metadata;
+    size_t GetGlobalWireId() override;
+    void SetGlobalWireId(size_t globalWireId) override;
+
+    size_t global_wire_id = 0;
 
 public:
     protoboard<FieldT> pb;
@@ -99,11 +106,12 @@ public:
 
     void SetMode(PROOFSYSTEM_MODE mode) override {
         ProofSystem<DCRTPoly, LibsnarkConstraintMetadata>::SetMode(mode);
-        LibsnarkProofSystem::ProofSystem::global_wire_id = 0;
+        SetGlobalWireId(0);
         if (mode == PROOFSYSTEM_MODE_CONSTRAINT_GENERATION) {
             pb = protoboard<FieldT>();
         }
     }
+    size_t GetNextWireId() override;
 
     std::shared_ptr<LibsnarkConstraintMetadata> ConstrainPublicOutput(Ciphertext<DCRTPoly>& ciphertext);
 
@@ -219,22 +227,19 @@ public:
                                     vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                     vector<vector<FieldT>>& out_max_value);
 
-
     //    void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkConstraintMetadata& vars) override {
     //        FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkConstraintMetadata&>(vars));
     //    }
 
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkConstraintMetadata& out_vars) override;
 
-//    static std::shared_ptr<LibsnarkConstraintMetadata> GetProofMetadata(ConstCiphertext<DCRTPoly>& ciphertext);
-//    static std::shared_ptr<LibsnarkConstraintMetadata> GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext);
-//    static void SetProofMetadata(Ciphertext<DCRTPoly>& ciphertext,
-//                                 const std::shared_ptr<LibsnarkConstraintMetadata>& metadata);
+    //    static std::shared_ptr<LibsnarkConstraintMetadata> GetProofMetadata(ConstCiphertext<DCRTPoly>& ciphertext);
+    //    static std::shared_ptr<LibsnarkConstraintMetadata> GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext);
+    //    static void SetProofMetadata(Ciphertext<DCRTPoly>& ciphertext,
+    //                                 const std::shared_ptr<LibsnarkConstraintMetadata>& metadata);
 
     void ConstrainSubstraction(ConstCiphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt, Ciphertext<DCRTPoly>& ctxt_out);
 
-    void ConstrainKeySwitch(ConstCiphertext<DCRTPoly>& ctxt_i, const EvalKey<DCRTPoly>& evalKey,
-                            Ciphertext<DCRTPoly>& ctxt_out);
     void ConstrainNTTOpt(const intnat::NativeVectorT<NativeInteger>& rootOfUnityTable,
                          const intnat::NativeVectorT<NativeInteger>& preconRootOfUnityTable,
                          const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,

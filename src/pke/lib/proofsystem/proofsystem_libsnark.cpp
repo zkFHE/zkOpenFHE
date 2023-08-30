@@ -766,7 +766,7 @@ void LibsnarkProofSystem::EvalSquareWitness(ConstCiphertext<DCRTPoly> ciphertext
 
 // TODO: add gadgets
 LibsnarkConstraintMetadata LibsnarkProofSystem::RescaleConstraint(ConstCiphertext<DCRTPoly> ctxt_in,
-                                                                      const LibsnarkConstraintMetadata& m) {
+                                                                  const LibsnarkConstraintMetadata& m) {
     const auto [num_polys, num_limbs, num_coeffs] = m.get_dims();
 
     LibsnarkConstraintMetadata out(num_polys);
@@ -858,7 +858,7 @@ void LibsnarkProofSystem::RescaleWitness(ConstCiphertext<DCRTPoly> ctxt, ConstCi
 LibsnarkConstraintMetadata LibsnarkProofSystem::EvalRotateConstraint(ConstCiphertext<DCRTPoly> ciphertext,
                                                                      const int rot_idx,
                                                                      ConstCiphertext<DCRTPoly> ctxt_out) {
-    auto in = *GetProofMetadata(ciphertext);
+    auto in = GetMetadata(ciphertext);
 
     auto index    = rot_idx;
     const auto cc = ciphertext->GetCryptoContext();
@@ -901,7 +901,8 @@ LibsnarkConstraintMetadata LibsnarkProofSystem::EvalRotateConstraint(ConstCipher
 
     Ciphertext<Element> result = ciphertext->Clone();
     algo->KeySwitchInPlace(result, evalKeyIterator->second);
-    ConstrainKeySwitch(ciphertext, evalKeyIterator->second, result);
+//    ConstrainKeySwitch(ciphertext, evalKeyIterator->second, result);
+    KeySwitchConstraint(ciphertext, evalKeyIterator->second, result); // TODO: keep track of gadgets
 
     //    rcv[0] = rcv[0].AutomorphismTransform(i, vec);
     //    rcv[1] = rcv[1].AutomorphismTransform(i, vec);
@@ -918,8 +919,8 @@ LibsnarkConstraintMetadata LibsnarkProofSystem::EvalRotateConstraint(ConstCipher
     return out;
 }
 
-void LibsnarkProofSystem::EvalRotateWitness(ConstCiphertext<DCRTPoly > ciphertext, int rot_idx,
-                                        ConstCiphertext<DCRTPoly > ctxt_out) {
+void LibsnarkProofSystem::EvalRotateWitness(ConstCiphertext<DCRTPoly> ciphertext, int rot_idx,
+                                            ConstCiphertext<DCRTPoly> ctxt_out) {
     const auto wire_id         = GetWireId(ctxt_out);
     const auto witnessMetadata = wire_metadata.at(wire_id);
 
@@ -931,7 +932,7 @@ void LibsnarkProofSystem::EvalRotateWitness(ConstCiphertext<DCRTPoly > ciphertex
 LibsnarkConstraintMetadata LibsnarkProofSystem::RelinearizeConstraint(ConstCiphertext<DCRTPoly> ciphertext) {
     assert(!!ciphertext);
 
-    const LibsnarkConstraintMetadata in = *(GetProofMetadata(ciphertext));
+    const LibsnarkConstraintMetadata in = GetMetadata(ciphertext);
     const size_t num_poly               = ciphertext->GetElements().size();
     const size_t num_limbs              = ciphertext->GetElements()[0].GetNumOfElements();
     assert(num_poly == 3);  // We don't support higher-order relin
@@ -1004,7 +1005,7 @@ LibsnarkConstraintMetadata LibsnarkProofSystem::KeySwitchConstraint(ConstCiphert
                                                                     const EvalKey<DCRTPoly>& ek,
                                                                     ConstCiphertext<DCRTPoly> ctxt_out) {
     assert(ctxt_in->GetElements().size() == 2);
-    auto in = *GetProofMetadata(ctxt_in);
+    auto in = GetMetadata(ctxt_in);
 
     const std::vector<DCRTPoly>& cv = ctxt_in->GetElements();
 
@@ -1096,7 +1097,7 @@ void LibsnarkProofSystem::FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt,
                                                     const LibsnarkConstraintMetadata& out_vars) {
     // ctxt holds metadata for the output of the computation, vars holds the (public input) variables allocated at the beginning of the computation
     // We resolve all pending lazy mod-reductions, and add constraints binding vars to the output of the computation
-    auto out           = *GetProofMetadata(ctxt);
+    auto out           = GetMetadata(ctxt);
     const auto modulus = out.modulus;
 
     assert(ctxt->GetElements().size() == out_vars.size());
@@ -2197,5 +2198,16 @@ void LibsnarkProofSystem::EncryptConstraint(Plaintext plaintext, ProofSystem::Do
 // TODO
 void LibsnarkProofSystem::EncryptWitness(Plaintext plaintext, ProofSystem::DoublePublicKey<DCRTPoly> publicKey,
                                          ProofSystem::DoubleCiphertext<DCRTPoly> ciphertext) {}
+size_t LibsnarkProofSystem::GetNextWireId() {
+    return global_wire_id++;
+}
+
+size_t LibsnarkProofSystem::GetGlobalWireId() {
+    return global_wire_id;
+}
+
+void LibsnarkProofSystem::SetGlobalWireId(size_t globalWireId) {
+    global_wire_id = globalWireId;
+}
 
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_CPP
