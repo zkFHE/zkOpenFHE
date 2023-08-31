@@ -34,13 +34,28 @@ public:
     WireIdMetadata(WireID wireId) : wire_id(std::move(wireId)) {}
 };
 
-template <typename Element, typename ConstraintMetadata>
+template <typename Element, typename ConstraintMetadata, typename WitnessMetadata>
 class ProofSystem : public CryptoContextImpl<Element> {
     static_assert(std::is_base_of<ProofsystemMetadata, ConstraintMetadata>::value,
                   "ConstraintMetadata is not derived from ProofsystemMetadata");
+    static_assert(std::is_base_of<ProofsystemMetadata, WitnessMetadata>::value,
+                  "WitnessMetadata is not derived from ProofsystemMetadata");
 
 protected:
+    std::unordered_map<WireID, WitnessMetadata> wire_id_to_metadata;
+
     virtual WireID GetWireId(ConstCiphertext<Element>& ciphertext) const {
+        auto it = ciphertext->FindMetadataByKey(PROOFSYSTEM_WIREID_METADATA_KEY);
+        if (ciphertext->MetadataFound(it)) {
+            auto res = std::dynamic_pointer_cast<WireIdMetadata>(ciphertext->GetMetadata(it));
+            return res->wire_id;
+        }
+        else {
+            OPENFHE_THROW(openfhe_error, "Attempt to access metadata (WireIdMetadata) that has not been set.");
+        }
+    }
+
+    virtual WireID GetWireId(Ciphertext<Element>& ciphertext) const {
         auto it = ciphertext->FindMetadataByKey(PROOFSYSTEM_WIREID_METADATA_KEY);
         if (ciphertext->MetadataFound(it)) {
             auto res = std::dynamic_pointer_cast<WireIdMetadata>(ciphertext->GetMetadata(it));
@@ -81,41 +96,45 @@ public:
         return cc;
     }
 
-    static void SetMetadata(Ciphertext<Element>& ciphertext, const std::shared_ptr<ConstraintMetadata>& metadata) {
+    template <typename T>  //, std::enable_if_t<std::is_base_of<ProofsystemMetadata, T>::value>>
+    static void SetMetadata(Ciphertext<Element>& ciphertext, const std::shared_ptr<T>& metadata) {
         ciphertext->SetMetadataByKey(metadata.GetKey(), metadata);
     }
 
-    static void SetMetadata(Ciphertext<Element>& ciphertext, const ConstraintMetadata& metadata) {
-        ciphertext->SetMetadataByKey(metadata.GetKey(), std::make_shared<ConstraintMetadata>(metadata));
+    template <typename T>  // , std::enable_if_t<std::is_base_of<ProofsystemMetadata, T>::value>>
+    static void SetMetadata(Ciphertext<Element>& ciphertext, const T& metadata) {
+        ciphertext->SetMetadataByKey(metadata.GetKey(), std::make_shared<T>(metadata));
     }
 
-    //    static std::shared_ptr<ConstraintMetadata> GetMetadata(ConstCiphertext<Element>& ciphertext) {
+    //    static std::shared_ptr<ConstraintMetadata> GetMetadata<ConstraintMetadata>(ConstCiphertext<Element>& ciphertext) {
     //        auto it = ciphertext->FindMetadataByKey(ConstraintMetadata::key);
     //        if (ciphertext->MetadataFound(it)) {
-    //            return std::dynamic_pointer_cast<ConstraintMetadata>(ciphertext->GetMetadata(it));
+    //            return std::dynamic_pointer_cast<ConstraintMetadata>(ciphertext->GetMetadata<ConstraintMetadata>(it));
     //        }
     //        else {
     //            throw std::logic_error("Attempt to access metadata (ConstraintMetadata) that has not been set.");
     //        }
     //    }
 
-    static ConstraintMetadata GetMetadata(Ciphertext<Element>& ciphertext) {
-        auto it = ciphertext->FindMetadataByKey(ConstraintMetadata::GetKey());
+    template <typename T>  //, std::enable_if_t<std::is_base_of<ProofsystemMetadata, T>::value>>
+    static T GetMetadata(const Ciphertext<Element>& ciphertext) {
+        auto it = ciphertext->FindMetadataByKey(T::GetKey());
         if (ciphertext->MetadataFound(it)) {
-            return *std::dynamic_pointer_cast<ConstraintMetadata>(ciphertext->GetMetadata(it));
+            return *std::dynamic_pointer_cast<T>(ciphertext->GetMetadata(it));
         }
         else {
-            throw std::logic_error("Attempt to access metadata (ConstraintMetadata) that has not been set.");
+            throw std::logic_error("Attempt to access metadata that has not been set.");
         }
     }
 
-    static ConstraintMetadata GetMetadata(ConstCiphertext<Element>& ciphertext) {
-        auto it = ciphertext->FindMetadataByKey(ConstraintMetadata::GetKey());
+    template <typename T>  //, std::enable_if_t<std::is_base_of<ProofsystemMetadata, T>::value>>
+    static T GetMetadata(ConstCiphertext<Element>& ciphertext) {
+        auto it = ciphertext->FindMetadataByKey(T::GetKey());
         if (ciphertext->MetadataFound(it)) {
-            return *std::dynamic_pointer_cast<ConstraintMetadata>(ciphertext->GetMetadata(it));
+            return *std::dynamic_pointer_cast<T>(ciphertext->GetMetadata(it));
         }
         else {
-            throw std::logic_error("Attempt to access metadata (ConstraintMetadata) that has not been set.");
+            throw std::logic_error("Attempt to access metadata  that has not been set.");
         }
     }
 
@@ -131,9 +150,11 @@ public:
                 break;
             case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
                 m = PublicInputConstraint(ciphertext);
-                SetMetadata(ciphertext, m);
+                SetMetadata<ConstraintMetadata>(ciphertext, m);
+                wire_id_to_metadata[GetWireId(ciphertext)] = m.witness_metadata;
                 break;
             case PROOFSYSTEM_MODE_WITNESS_GENERATION:
+                SetMetadata(ciphertext, wire_id_to_metadata.at(GetWireId(ciphertext)));
                 PublicInputWitness(ciphertext);
                 break;
             default:
@@ -207,10 +228,12 @@ public:
                 return ctxt_out;
             case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
                 // TODO: we don't actually need to evaluate ctxt_out for constraint generation. Is this really a problem in practice?
-                m = EvalAddConstraint(GetMetadata(ctxt1), GetMetadata(ctxt2));
-                SetMetadata(ctxt_out, m);
+                m = EvalAddConstraint(GetMetadata<ConstraintMetadata>(ctxt1), GetMetadata<ConstraintMetadata>(ctxt2));
+                SetMetadata<ConstraintMetadata>(ctxt_out, m);
+                wire_id_to_metadata[GetWireId(ctxt_out)] = m.witness_metadata;
                 break;
             case PROOFSYSTEM_MODE_WITNESS_GENERATION:
+                SetMetadata(ctxt_out, wire_id_to_metadata.at(GetWireId(ctxt_out)));
                 EvalAddWitness(ctxt1, ctxt2, ctxt_out);
                 break;
             default:
@@ -231,10 +254,12 @@ public:
                 return ctxt_out;
             case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
                 // TODO: we don't actually need to evaluate ctxt_out for constraint generation. Is this really a problem in practice?
-                m = EvalSubConstraint(GetMetadata(ctxt1), GetMetadata(ctxt2));
+                m = EvalSubConstraint(GetMetadata<ConstraintMetadata>(ctxt1), GetMetadata<ConstraintMetadata>(ctxt2));
                 SetMetadata(ctxt_out, m);
+                wire_id_to_metadata[GetWireId(ctxt_out)] = m.witness_metadata;
                 break;
             case PROOFSYSTEM_MODE_WITNESS_GENERATION:
+                SetMetadata(ctxt_out, wire_id_to_metadata.at(GetWireId(ctxt_out)));
                 EvalSubWitness(ctxt1, ctxt2, ctxt_out);
                 break;
             default:
@@ -248,7 +273,7 @@ public:
     virtual void EvalMultNoRelinWitness(ConstCiphertext<Element> ciphertext1, ConstCiphertext<Element> ciphertext2,
                                         ConstCiphertext<Element> ciphertext_out)       = 0;
     Ciphertext<Element> EvalMultNoRelin(ConstCiphertext<Element> ctxt1, ConstCiphertext<Element> ctxt2) {
-        auto ctxt_out = GetCryptoContext()->EvalAdd(ctxt1, ctxt2);
+        auto ctxt_out = GetCryptoContext()->EvalMultNoRelin(ctxt1, ctxt2);
         SetWireId(ctxt_out, "MultNoRelin(" + GetWireId(ctxt1) + "," + GetWireId(ctxt2) + ")");
         ConstraintMetadata m;
         switch (mode) {
@@ -256,10 +281,13 @@ public:
                 return ctxt_out;
             case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
                 // TODO: we don't actually need to evaluate ctxt_out for constraint generation. Is this really a problem in practice?
-                m = EvalMultNoRelinConstraint(GetMetadata(ctxt1), GetMetadata(ctxt2));
+                m = EvalMultNoRelinConstraint(GetMetadata<ConstraintMetadata>(ctxt1),
+                                              GetMetadata<ConstraintMetadata>(ctxt2));
                 SetMetadata(ctxt_out, m);
+                wire_id_to_metadata[GetWireId(ctxt_out)] = m.witness_metadata;
                 break;
             case PROOFSYSTEM_MODE_WITNESS_GENERATION:
+                SetMetadata(ctxt_out, wire_id_to_metadata.at(GetWireId(ctxt_out)));
                 EvalMultNoRelinWitness(ctxt1, ctxt2, ctxt_out);
                 break;
             default:
@@ -280,10 +308,12 @@ public:
                 return ctxt_out;
             case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
                 // TODO: we don't actually need to evaluate ctxt_out for constraint generation. Is this really a problem in practice?
-                m = EvalSquareConstraint(GetMetadata(ctxt));
+                m = EvalSquareConstraint(GetMetadata<ConstraintMetadata>(ctxt));
                 SetMetadata(ctxt_out, m);
+                wire_id_to_metadata[GetWireId(ctxt_out)] = m.witness_metadata;
                 break;
             case PROOFSYSTEM_MODE_WITNESS_GENERATION:
+                SetMetadata(ctxt_out, wire_id_to_metadata.at(GetWireId(ctxt_out)));
                 EvalSquareWitness(ctxt, ctxt_out);
                 break;
             default:
@@ -304,10 +334,12 @@ public:
                 return ctxt_out;
             case PROOFSYSTEM_MODE_CONSTRAINT_GENERATION:
                 // TODO: we don't actually need to evaluate ctxt_out for constraint generation. Is this really a problem in practice?
-                m = RescaleConstraint(ctxt, GetMetadata(ctxt));
+                m = RescaleConstraint(ctxt, GetMetadata<ConstraintMetadata>(ctxt));
                 SetMetadata(ctxt_out, m);
+                wire_id_to_metadata[GetWireId(ctxt_out)] = m.witness_metadata;
                 break;
             case PROOFSYSTEM_MODE_WITNESS_GENERATION:
+                SetMetadata(ctxt_out, wire_id_to_metadata.at(GetWireId(ctxt_out)));
                 RescaleWitness(ctxt, ctxt_out);
                 break;
             default:
@@ -332,8 +364,10 @@ public:
                 // TODO: we don't actually need to evaluate ctxt_out for constraint generation. Is this really a problem in practice?
                 m = EvalRotateConstraint(ctxt, rot_idx, ctxt_out);
                 SetMetadata(ctxt_out, m);
+                wire_id_to_metadata[GetWireId(ctxt_out)] = m.witness_metadata;
                 break;
             case PROOFSYSTEM_MODE_WITNESS_GENERATION:
+                SetMetadata(ctxt_out, wire_id_to_metadata.at(GetWireId(ctxt_out)));
                 EvalRotateWitness(ctxt, rot_idx, ctxt_out);
                 break;
             default:
@@ -356,8 +390,10 @@ public:
                 // TODO: we don't actually need to evaluate ctxt_out for constraint generation. Is this really a problem in practice?
                 m = RelinearizeConstraint(ctxt);
                 SetMetadata(ctxt_out, m);
+                wire_id_to_metadata[GetWireId(ctxt_out)] = m.witness_metadata;
                 break;
             case PROOFSYSTEM_MODE_WITNESS_GENERATION:
+                SetMetadata(ctxt_out, wire_id_to_metadata.at(GetWireId(ctxt_out)));
                 RelinearizeWitness(ctxt, ctxt_out);
                 break;
             default:
@@ -382,8 +418,10 @@ public:
                 // TODO: we don't actually need to evaluate ctxt_out for constraint generation. Is this really a problem in practice?
                 m = KeySwitchConstraint(ctxt, ek, ctxt_out);
                 SetMetadata(ctxt_out, m);
+                wire_id_to_metadata[GetWireId(ctxt_out)] = m.witness_metadata;
                 break;
             case PROOFSYSTEM_MODE_WITNESS_GENERATION:
+                SetMetadata(ctxt_out, wire_id_to_metadata.at(GetWireId(ctxt_out)));
                 KeyswitchWitness(ctxt, ek, ctxt_out);
                 break;
             default:

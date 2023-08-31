@@ -15,13 +15,16 @@ using std::vector;
 using namespace libsnark;
 typedef libff::Fr<default_r1cs_ppzksnark_pp> FieldT;
 
-class LibsnarkWitnessMetadata : public Metadata {
-    //    vector<vector<vector<size_t>>> variable_indices;
+class LibsnarkWitnessMetadata : public ProofsystemMetadata {
 public:
     LibsnarkWitnessMetadata() = default;
     size_t index_start;
     std::shared_ptr<protoboard<FieldT>> pb;
     vector<std::shared_ptr<gadget_gen<FieldT>>> gadgets;
+
+    static std::string GetKey() {
+        return std::string("proofsystem_metadata_") + typeid(LibsnarkWitnessMetadata).name();
+    };
 };
 
 class LibsnarkConstraintMetadata : public ProofsystemMetadata,
@@ -59,7 +62,7 @@ public:
     }
 
     inline std::tuple<size_t, size_t, size_t> get_dims() const {
-        return std::make_tuple(size(), this[0].size(), this[0][0].size());
+        return std::make_tuple(size(), this->operator[](0).size(), this->operator[](0)[0].size());
     }
 
     inline bool matches_dim(const LibsnarkConstraintMetadata& other) const {
@@ -67,9 +70,18 @@ public:
         auto [m1, m2, m3] = other.get_dims();
         return (n1 == m1) && (n2 == m2) && (n3 == m3);
     }
+
+    template <typename Element>
+    inline bool matches_dim(ConstCiphertext<Element>& ciphertext) const {
+        auto [n1, n2, n3] = get_dims();
+        auto [m1, m2, m3] =
+            std::make_tuple(ciphertext->GetElements().size(), ciphertext->GetElements()[0].GetNumOfElements(),
+                            ciphertext->GetElements()[0].GetElementAtIndex(0).GetLength());
+        return (n1 == m1) && (n2 == m2) && (n3 == m3);
+    }
 };
 
-class LibsnarkProofSystem : public ProofSystem<DCRTPoly, LibsnarkConstraintMetadata> {
+class LibsnarkProofSystem : public ProofSystem<DCRTPoly, LibsnarkConstraintMetadata, LibsnarkWitnessMetadata> {
 protected:
     vector<std::shared_ptr<gadget_gen<FieldT>>> constrain_addmod_lazy(const LibsnarkConstraintMetadata& in1,
                                                                       size_t index_1,
@@ -100,12 +112,12 @@ public:
     protoboard<FieldT> pb;
 
     explicit LibsnarkProofSystem(const CryptoContext<DCRTPoly>& cc)
-        : ProofSystem<DCRTPoly, LibsnarkConstraintMetadata>(cc) {
+        : ProofSystem<DCRTPoly, LibsnarkConstraintMetadata, LibsnarkWitnessMetadata>(cc) {
         default_r1cs_ppzksnark_pp::init_public_params();
     }
 
     void SetMode(PROOFSYSTEM_MODE mode) override {
-        ProofSystem<DCRTPoly, LibsnarkConstraintMetadata>::SetMode(mode);
+        ProofSystem<DCRTPoly, LibsnarkConstraintMetadata, LibsnarkWitnessMetadata>::SetMode(mode);
         SetGlobalWireId(0);
         if (mode == PROOFSYSTEM_MODE_CONSTRAINT_GENERATION) {
             pb = protoboard<FieldT>();
