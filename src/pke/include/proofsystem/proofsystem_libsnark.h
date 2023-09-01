@@ -25,6 +25,11 @@ public:
     static std::string GetKey() {
         return std::string("proofsystem_metadata_") + typeid(LibsnarkWitnessMetadata).name();
     };
+
+    template <typename GadgetT>
+    std::enable_if_t<std::is_base_of_v<gadget_gen<FieldT>, GadgetT>, void> add_gadget(GadgetT&& gadget) {
+        gadgets.push_back(std::make_shared<GadgetT>(gadget));
+    }
 };
 
 class LibsnarkConstraintMetadata : public ProofsystemMetadata,
@@ -178,36 +183,42 @@ public:
 
     void ConstrainRescale(ConstCiphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
 
-    void ConstrainSetFormat(Format format, const DCRTPoly::PolyType& in, const DCRTPoly::PolyType& out,
+    void ConstrainSetFormat(const Format format, const DCRTPoly::PolyType& in, const DCRTPoly::PolyType& out,
                             const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
-                            vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
+                            vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
+                            LibsnarkWitnessMetadata& witness_metadata);
 
     void ConstrainSetFormat(Format format, const DCRTPoly& in, const DCRTPoly& out,
                             const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
                             const vector<FieldT>& in_max_value, vector<vector<pb_linear_combination<FieldT>>>& out_lc,
                             vector<FieldT>& out_max_value);
 
-    void ConstrainNTTClassic(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
-                             const DCRTPoly::PolyType::Vector& preconRootOfUnityTable,
-                             const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
-                             const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
-                             vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
+    void NTTOpenfheConstraint(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
+                              const DCRTPoly::PolyType::Vector& preconRootOfUnityTable,
+                              const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
+                              const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                              vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
+                              LibsnarkWitnessMetadata& witness_metadata);
 
-    void ConstrainNTT(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
-                      const DCRTPoly::PolyType::Vector& preconRootOfUnityTable, const DCRTPoly::PolyType& element_in,
-                      const DCRTPoly::PolyType& element_out
+    void NTTOpenfheWitness(LibsnarkWitnessMetadata& witness_metadata);
 
-                      ,
+    void NTTLinalgConstraint(const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
                       const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
-                      vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
+                      vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
+                      LibsnarkWitnessMetadata& witness_metadata);
 
-    void ConstrainINTT(const DCRTPoly::PolyType::Vector& rootOfUnityInverseTable,
+    void NTTLinalgWitness(LibsnarkWitnessMetadata& witness_metadata);
+
+    void INTTOpenfheConstraint(const DCRTPoly::PolyType::Vector& rootOfUnityInverseTable,
                        const DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
                        const DCRTPoly::PolyType::Vector::Integer& cycloOrderInv,
                        const DCRTPoly::PolyType::Vector::Integer& preconCycloOrderInv,
-                       const DCRTPoly::PolyType& element, const DCRTPoly::PolyType& element_out,
+                       const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
                        const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
-                       vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value);
+                       vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
+                       LibsnarkWitnessMetadata& witness_metadata);
+
+    void INTTOpenfheWitness(LibsnarkWitnessMetadata& witness_metadata);
 
     void ConstrainSwitchModulus(const DCRTPoly::PolyType::Vector::Integer& newModulus,
                                 const DCRTPoly::PolyType::Vector::Integer& rootOfUnity,
@@ -239,24 +250,7 @@ public:
                                     vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
                                     vector<vector<FieldT>>& out_max_value);
 
-    //    void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkConstraintMetadata& vars) override {
-    //        FinalizeOutputConstraints(ctxt, dynamic_cast<const LibsnarkConstraintMetadata&>(vars));
-    //    }
-
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkConstraintMetadata& out_vars) override;
-
-    //    static std::shared_ptr<LibsnarkConstraintMetadata> GetProofMetadata(ConstCiphertext<DCRTPoly>& ciphertext);
-    //    static std::shared_ptr<LibsnarkConstraintMetadata> GetProofMetadata(const Ciphertext<DCRTPoly>& ciphertext);
-    //    static void SetProofMetadata(Ciphertext<DCRTPoly>& ciphertext,
-    //                                 const std::shared_ptr<LibsnarkConstraintMetadata>& metadata);
-
-    void ConstrainSubstraction(ConstCiphertext<DCRTPoly>& ctxt1, const Plaintext& ptxt, Ciphertext<DCRTPoly>& ctxt_out);
-
-    void ConstrainNTTOpt(const intnat::NativeVectorT<NativeInteger>& rootOfUnityTable,
-                         const intnat::NativeVectorT<NativeInteger>& preconRootOfUnityTable,
-                         const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
-                         const vector<FieldT>& in_lc, const FieldT& in_max_value, vector<FieldT>& out_lc,
-                         FieldT& out_max_value);
 };
 
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H

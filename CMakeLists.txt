@@ -98,6 +98,13 @@ if( NOT CKKS_M_FACTOR )
    set( CKKS_M_FACTOR 1 )
 endif()
 
+# Add options for variants of arithmetization procedure
+set(PROOFSYSTEM_R1CS_NTT "LINALG" CACHE STRING "R1CS arithmetization mode for NTT/INTT. One of: OPENFHE, LINALG")
+if (NOT (PROOFSYSTEM_R1CS_NTT MATCHES "OPENFHE") AND NOT (PROOFSYSTEM_R1CS_NTT MATCHES "LINALG"))
+    message(FATAL_ERROR "Invalid option '${PROOFSYSTEM_R1CS_NTT}' for PROOFSYSTEM_R1CS_NTT")
+endif ()
+add_compile_definitions("-DPROOFSYSTEM_R1CS_NTT_${PROOFSYSTEM_R1CS_NTT}")
+
 ### Print options
 message( STATUS "BUILD_UNITTESTS:  ${BUILD_UNITTESTS}")
 message( STATUS "BUILD_EXAMPLES:   ${BUILD_EXAMPLES}")
@@ -117,6 +124,8 @@ message( STATUS "CKKS_M_FACTOR:    ${CKKS_M_FACTOR}")
 message( STATUS "WITH_NATIVEOPT:   ${WITH_NATIVEOPT}")
 message( STATUS "WITH_COVTEST:     ${WITH_COVTEST}")
 message( STATUS "USE_MACPORTS:     ${USE_MACPORTS}")
+### Print custom options
+message( STATUS "PROOFSYSTEM_R1CS_NTT: ${PROOFSYSTEM_R1CS_NTT}")
 
 #--------------------------------------------------------------------
 # Compiler logic
