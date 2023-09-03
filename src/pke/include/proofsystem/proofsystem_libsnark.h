@@ -27,6 +27,11 @@ public:
     };
 
     template <typename GadgetT>
+    std::enable_if_t<std::is_base_of_v<gadget_gen<FieldT>, GadgetT>, void> add_gadget(const GadgetT& gadget) {
+        gadgets.push_back(std::make_shared<GadgetT>(gadget));
+    }
+
+    template <typename GadgetT>
     std::enable_if_t<std::is_base_of_v<gadget_gen<FieldT>, GadgetT>, void> add_gadget(GadgetT&& gadget) {
         gadgets.push_back(std::make_shared<GadgetT>(gadget));
     }
@@ -183,15 +188,17 @@ public:
 
     void ConstrainRescale(ConstCiphertext<DCRTPoly>& ctxt, Ciphertext<DCRTPoly>& ctxt_out);
 
-    void ConstrainSetFormat(const Format format, const DCRTPoly::PolyType& in, const DCRTPoly::PolyType& out,
-                            const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
-                            vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
-                            LibsnarkWitnessMetadata& witness_metadata);
+    void SetFormatConstraint(const Format format, const DCRTPoly::PolyType& in, const DCRTPoly::PolyType& out,
+                             const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                             vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
+                             LibsnarkWitnessMetadata& witness_metadata);
 
-    void ConstrainSetFormat(Format format, const DCRTPoly& in, const DCRTPoly& out,
-                            const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
-                            const vector<FieldT>& in_max_value, vector<vector<pb_linear_combination<FieldT>>>& out_lc,
-                            vector<FieldT>& out_max_value);
+    void SetFormatConstraint(const Format format, const DCRTPoly& in, const DCRTPoly& out,
+                             const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
+                             const vector<FieldT>& in_max_value, vector<vector<pb_linear_combination<FieldT>>>& out_lc,
+                             vector<FieldT>& out_max_value, LibsnarkWitnessMetadata& witness_metadata);
+
+    void SetFormatWitness(const Format format, LibsnarkWitnessMetadata& witness_metadata);
 
     void NTTOpenfheConstraint(const DCRTPoly::PolyType::Vector& rootOfUnityTable,
                               const DCRTPoly::PolyType::Vector& preconRootOfUnityTable,
@@ -203,38 +210,36 @@ public:
     void NTTOpenfheWitness(LibsnarkWitnessMetadata& witness_metadata);
 
     void NTTLinalgConstraint(const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
-                      const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
-                      vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
-                      LibsnarkWitnessMetadata& witness_metadata);
+                             const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                             vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
+                             LibsnarkWitnessMetadata& witness_metadata);
 
     void NTTLinalgWitness(LibsnarkWitnessMetadata& witness_metadata);
 
     void INTTOpenfheConstraint(const DCRTPoly::PolyType::Vector& rootOfUnityInverseTable,
-                       const DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
-                       const DCRTPoly::PolyType::Vector::Integer& cycloOrderInv,
-                       const DCRTPoly::PolyType::Vector::Integer& preconCycloOrderInv,
-                       const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
-                       const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
-                       vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
-                       LibsnarkWitnessMetadata& witness_metadata);
+                               const DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
+                               const DCRTPoly::PolyType::Vector::Integer& cycloOrderInv,
+                               const DCRTPoly::PolyType::Vector::Integer& preconCycloOrderInv,
+                               const DCRTPoly::PolyType& element_in, const DCRTPoly::PolyType& element_out,
+                               const vector<pb_linear_combination<FieldT>>& in_lc, const FieldT& in_max_value,
+                               vector<pb_linear_combination<FieldT>>& out_lc, FieldT& out_max_value,
+                               LibsnarkWitnessMetadata& witness_metadata);
 
     void INTTOpenfheWitness(LibsnarkWitnessMetadata& witness_metadata);
 
-    void ConstrainSwitchModulus(const DCRTPoly::PolyType::Vector::Integer& newModulus,
-                                const DCRTPoly::PolyType::Vector::Integer& rootOfUnity,
-                                const DCRTPoly::PolyType::Vector::Integer& modulusArb,
-                                const DCRTPoly::PolyType::Vector::Integer& rootOfUnityArb, const DCRTPoly::PolyType& in,
-                                const DCRTPoly::PolyType& out, const vector<pb_linear_combination<FieldT>>& in_lc,
-                                const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
-                                FieldT& out_max_value);
+    void SwitchModulusConstraint(const DCRTPoly::PolyType::Vector::Integer& newModulus,
+                                 const DCRTPoly::PolyType::Vector::Integer& rootOfUnity, const DCRTPoly::PolyType& in,
+                                 const DCRTPoly::PolyType& out, const vector<pb_linear_combination<FieldT>>& in_lc,
+                                 const FieldT& in_max_value, vector<pb_linear_combination<FieldT>>& out_lc,
+                                 FieldT& out_max_value, LibsnarkWitnessMetadata& witness_metadata);
 
-    void ConstrainKeySwitchPrecomputeCore(const DCRTPoly& in,
-                                          const std::shared_ptr<CryptoParametersBase<DCRTPoly>>& cryptoParamsBase,
-                                          const std::shared_ptr<std::vector<DCRTPoly>>& out,
-                                          const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
-                                          const vector<FieldT>& in_max_value,
-                                          vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
-                                          vector<vector<FieldT>>& out_max_value);
+    void SwitchModulusWitness(LibsnarkWitnessMetadata& witness_metadata);
+
+    void ConstrainKeySwitchPrecomputeCore(
+        const DCRTPoly& in, const std::shared_ptr<CryptoParametersBase<DCRTPoly>>& cryptoParamsBase,
+        const std::shared_ptr<std::vector<DCRTPoly>>& out, const vector<vector<pb_linear_combination<FieldT>>>& in_lc,
+        const vector<FieldT>& in_max_value, vector<vector<vector<pb_linear_combination<FieldT>>>>& out_lc,
+        vector<vector<FieldT>>& out_max_value, LibsnarkWitnessMetadata& witness_metadata);
 
     void ConstrainFastKeySwitchCore(const EvalKey<DCRTPoly>& evalKey, const std::shared_ptr<DCRTPoly::Params>& paramsQl,
                                     const vector<vector<vector<pb_linear_combination<FieldT>>>>& in_lc,
@@ -252,5 +257,15 @@ public:
 
     void FinalizeOutputConstraints(Ciphertext<DCRTPoly>& ctxt, const LibsnarkConstraintMetadata& out_vars) override;
 };
+
+void NTTParameters(DCRTPoly::PolyType::Vector::Integer rootOfUnity, usint CycloOrder,
+                   DCRTPoly::PolyType::Integer modulus, DCRTPoly::PolyType::Vector& rootOfUnityTable,
+                   DCRTPoly::PolyType::Vector& preconRootOfUnityTable);
+
+void INTTParameters(DCRTPoly::PolyType::Vector::Integer rootOfUnity, usint CycloOrder,
+                    DCRTPoly::PolyType::Integer modulus, DCRTPoly::PolyType::Vector& rootOfUnityInverseTable,
+                    DCRTPoly::PolyType::Vector& preconRootOfUnityInverseTable,
+                    DCRTPoly::PolyType::Vector::Integer& cycloOrderInv,
+                    DCRTPoly::PolyType::Vector::Integer& preconCycloOrderInv);
 
 #endif  //OPENFHE_PROOFSYSTEM_LIBSNARK_H

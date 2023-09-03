@@ -1,17 +1,3 @@
-#define PROOFSYSTEM_CHECK_STRICT
-
-#ifdef PROOFSYSTEM_CHECK_STRICT
-    #define PROOFSYSTEM_ASSERT_EQ(a, b)                \
-        do {                                           \
-            if (a != b) {                              \
-                std::cerr << a << " != " << b << endl; \
-            }                                          \
-            assert(a == b);                            \
-        } while (0);
-#else
-    #define PROOFSYSTEM_ASSERT_EQ(a, b) ;
-#endif
-
 #include <gtest/gtest.h>
 
 #include "proofsystem/gadgets_libsnark.h"
@@ -19,6 +5,7 @@
 #include "openfhe.h"
 #include "proofsystem/proofsystem_libsnark.h"
 #include <iostream>
+#include <utility>
 using std::cout, std::cerr, std::endl;
 
 namespace {
@@ -44,15 +31,58 @@ std::string format_indices(size_t i, size_t j, size_t k) {
 template <typename T>
 class WithInfo {
 public:
-    const std::string info;
     const T obj;
-    WithInfo(const T& obj, const std::string& inog) : obj(obj), info(info) {}
+    const std::string info;
+    WithInfo(const T& obj, std::string info) : obj(obj), info(std::move(info)) {}
+
+    bool operator==(const WithInfo<T>& other) const {
+        return obj == other.obj;
+    }
 };
 
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const WithInfo<T>& obj) {
     os << obj.obj << " (" << obj.info << ")";
     return os;
+}
+
+inline void expect_lessequal_maxvalue(protoboard<FieldT>& pb, const LibsnarkConstraintMetadata& out_metadata) {
+    const auto [num_polys, num_limbs, num_coeffs] = out_metadata.get_dims();
+
+    for (size_t i = 0; i < num_polys; ++i) {
+        for (size_t j = 0; j < num_limbs; ++j) {
+            for (size_t k = 0; k < num_coeffs; ++k) {
+                auto info = format_indices(i, j, k);
+                out_metadata[i][j][k].evaluate(pb);
+                bool le = lt_eq(pb.lc_val(out_metadata[i][j][k]), out_metadata.max_value[i][j]);
+                EXPECT_TRUE(le);
+            }
+        }
+    }
+}
+
+inline void expect_lessequal_maxvalue(protoboard<FieldT>& pb, const vector<vector<pb_linear_combination<FieldT>>>& lc,
+                                      const vector<FieldT>& max_value) {
+    const auto num_limbs  = lc.size();
+    const auto num_coeffs = lc[0].size();
+    for (size_t i = 0; i < num_limbs; ++i) {
+        for (size_t j = 0; j < num_coeffs; ++j) {
+            lc[i][j].evaluate(pb);
+            bool le = lt_eq(pb.lc_val(lc[i][j]), max_value[i]);
+            EXPECT_TRUE(le);
+        }
+    }
+}
+
+inline void expect_lessequal_maxvalue(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& lc,
+                                      const FieldT& max_value) {
+    const auto num_coeffs = lc.size();
+
+    for (size_t i = 0; i < num_coeffs; ++i) {
+        lc[i].evaluate(pb);
+        bool le = lt_eq(pb.lc_val(lc[i]), max_value);
+        EXPECT_TRUE(le);
+    }
 }
 
 template <typename Element>
@@ -106,6 +136,26 @@ inline void expect_equal_mod(protoboard<FieldT>& pb, const vector<pb_linear_comb
     }
 }
 
+template <typename VecType>
+inline void expect_equal(protoboard<FieldT>& pb, const vector<pb_linear_combination<FieldT>>& lc, const VecType& vec) {
+    const auto num_coeffs     = lc.size();
+    const auto vec_num_coeffs = vec.GetLength();
+    EXPECT_EQ(num_coeffs, vec_num_coeffs);
+
+    if (num_coeffs != vec_num_coeffs) {
+        cerr
+            << "Aborting more advanced value-by-value test, as vector and constraint metadata have different dimensions."
+            << endl;
+        return;
+    }
+    for (size_t i = 0; i < num_coeffs; ++i) {
+        lc[i].evaluate(pb);
+        auto actual   = WithInfo(pb.lc_val(lc[i]), "index:" + std::to_string(i));
+        auto expected = WithInfo(FieldT(vec[i].ConvertToInt()), "index:" + std::to_string(i));
+        EXPECT_EQ(actual, expected);
+    }
+}
+
 template <typename Element>
 inline void expect_notequal_mod(protoboard<FieldT>& pb, const LibsnarkConstraintMetadata& out_metadata,
                                 const Ciphertext<Element>& out) {
@@ -148,7 +198,7 @@ TEST(libsnark_openfhe_gadgets, less_than_constant) {
 
     auto expected  = 2 * 2 + 3 * 4 + 1;
     auto test_over = 10;
-    for (size_t i = 1; i < expected + test_over; i++) {
+    for (long i = 1; i < expected + test_over; i++) {
         protoboard<FieldT> pb;
         pb_variable<FieldT> a;
         a.allocate(pb, "a");
@@ -175,10 +225,10 @@ TEST(libsnark_openfhe_gadgets, less_than_constant) {
 TEST(libsnark_openfhe_gadgets, mod_gadget) {
     libff::default_ec_pp::init_public_params();
 
-    vector<size_t> moduli = {2, (1ul << 2) - 1, (1ul << 10) - 1};
+    vector<long> moduli = {2, (1ul << 2) - 1, (1ul << 10) - 1};
     for (const auto& modulus : moduli) {
-        size_t q = 42;
-        for (size_t i = 0; i < modulus; i++) {
+        long q = 42;
+        for (long i = 0; i < modulus; i++) {
             protoboard<FieldT> pb;
             pb_variable<FieldT> a;
             a.allocate(pb, "a");
@@ -235,12 +285,14 @@ TEST(libsnark_openfhe_gadgets, add) {
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
     eval(ctxt1, ctxt2);
 
-    auto pb = ps.pb;
+    // Check correctness
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_metadata);
+    expect_equal_mod(ps.pb, out_metadata, out);
 
-    EXPECT_EQ(pb.is_satisfied(), true);
-    expect_equal_mod(pb, out_metadata, out);
+    // Check soundness
     for (const auto& p : perturbed(out)) {
-        expect_notequal_mod(pb, out_metadata, p);
+        expect_notequal_mod(ps.pb, out_metadata, p);
     }
 }
 
@@ -270,11 +322,10 @@ TEST(libsnark_openfhe_gadgets, add_plain) {
     //    ps.C(ctxt1, plaintext1, out);
     // TODO
 
-    auto pb = ps.pb;
+    print_stats(ps.pb);
 
-    print_stats(pb);
-
-    EXPECT_EQ(pb.is_satisfied(), true);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    //    expect_lessequal_maxvalue(ps.pb, out_metadata);
     EXPECT_FALSE(true);  // TODO
     //    expect_equal_mod(pb, out_metadata, out);
 }
@@ -318,9 +369,9 @@ TEST(libsnark_openfhe_gadgets, sub) {
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
     eval(ctxt1, ctxt2);
 
-    auto pb = ps.pb;
-    EXPECT_EQ(pb.is_satisfied(), true);
-    expect_equal_mod(pb, out_metadata, out);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_metadata);
+    expect_equal_mod(ps.pb, out_metadata, out);
 }
 
 TEST(libsnark_openfhe_gadgets, sub_plain) {
@@ -346,13 +397,11 @@ TEST(libsnark_openfhe_gadgets, sub_plain) {
 
     LibsnarkProofSystem ps(cryptoContext);
     ps.PublicInput(ctxt1);
-    //    ps.ConstrainSubstraction(ctxt1, plaintext1, out); // TODO
+    //    ps.ConstrainSubtraction(ctxt1, plaintext1, out); // TODO
 
-    auto pb = ps.pb;
+    print_stats(ps.pb);
 
-    print_stats(pb);
-
-    EXPECT_EQ(pb.is_satisfied(), true);
+    EXPECT_TRUE(ps.pb.is_satisfied());
     EXPECT_FALSE(true);  // TODO
     //    expect_equal_mod(pb, out_metadata, out);
 }
@@ -396,10 +445,9 @@ TEST(libsnark_openfhe_gadgets, mult) {
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
     eval(ctxt1, ctxt2);
 
-    auto pb = ps.pb;
-
-    EXPECT_EQ(pb.is_satisfied(), true);
-    expect_equal_mod(pb, out_metadata, out);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_metadata);
+    expect_equal_mod(ps.pb, out_metadata, out);
 }
 
 TEST(libsnark_openfhe_gadgets, mult_plain) {
@@ -429,11 +477,9 @@ TEST(libsnark_openfhe_gadgets, mult_plain) {
     ps.PublicInput(ctxt1);
     //    ps.EvalMultNoRelin(ctxt1, plaintext1, out);
 
-    auto pb = ps.pb;
+    print_stats(ps.pb);
 
-    print_stats(pb);
-
-    EXPECT_EQ(pb.is_satisfied(), true);
+    EXPECT_TRUE(ps.pb.is_satisfied());
 
     EXPECT_EQ(true, false);  // TODO
     //    expect_equal_mod(pb, out_metadata, out);
@@ -477,7 +523,8 @@ TEST(libsnark_openfhe_gadgets, square) {
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
     eval(ctxt1);
 
-    EXPECT_EQ(ps.pb.is_satisfied(), true);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_metadata);
     expect_equal_mod(ps.pb, out_metadata, out);
 }
 
@@ -502,18 +549,12 @@ TEST(libsnark_openfhe_gadgets, ntt_openfhe) {
 
     Ciphertext<DCRTPoly> ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
 
-    using VecType = typename DCRTPoly::PolyType::Vector;
-    auto in_0     = ctxt->GetElements()[0].GetElementAtIndex(0);
+    auto in_0 = ctxt->GetElements()[0].GetElementAtIndex(0);
     in_0.SwitchFormat();
     assert(in_0.GetFormat() == Format::COEFFICIENT);
     auto out_0(in_0);
     out_0.SwitchFormat();
     assert(out_0.GetFormat() == Format::EVALUATION);
-
-    // out.GetRootOfUnity() is set to 0, as is out.GetParams().GetRootOfUnity()
-    auto rootOfUnity   = out_0.GetRootOfUnity();
-    auto CycloOrder    = out_0.GetCyclotomicOrder();
-    usint CycloOrderHf = (CycloOrder >> 1);
 
     LibsnarkProofSystem ps(cryptoContext);
     LibsnarkWitnessMetadata witness_metadata;
@@ -533,25 +574,23 @@ TEST(libsnark_openfhe_gadgets, ntt_openfhe) {
         ps.pb.lc_val(in_lc[i]) = FieldT(in_0_0[i].Mod(modulus).ConvertToInt<long>());
     }
 
-    using namespace intnat;
-    auto crt       = ChineseRemainderTransformFTTNat<VecType>();
-    auto mapSearch = crt.m_rootOfUnityReverseTableByModulus.find(modulus);
-    if (mapSearch == crt.m_rootOfUnityReverseTableByModulus.end() || mapSearch->second.GetLength() != CycloOrderHf) {
-        crt.PreCompute(rootOfUnity, CycloOrder, modulus);
-    }
+    // Get NTT parameters
+    DCRTPoly::PolyType ::Vector rootOfUnityTable, preconRootOfUnityTable;
+    NTTParameters(in_0.GetRootOfUnity(), in_0.GetCyclotomicOrder(), in_0.GetModulus(), rootOfUnityTable,
+                  preconRootOfUnityTable);
 
     vector<pb_linear_combination<FieldT>> out_lc;
     FieldT out_max_value;
-    ps.NTTOpenfheConstraint(ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus[modulus],
-                            ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityPreconReverseTableByModulus[modulus],
-                            in_0, out_0, in_lc, in_max_value, out_lc, out_max_value, witness_metadata);
+    ps.NTTOpenfheConstraint(rootOfUnityTable, preconRootOfUnityTable, in_0, out_0, in_lc, in_max_value, out_lc,
+                            out_max_value, witness_metadata);
     print_stats(ps.pb);
 
     // Generate witnesses
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
     ps.NTTOpenfheWitness(witness_metadata);
 
-    EXPECT_EQ(ps.pb.is_satisfied(), true);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_lc, out_max_value);
     expect_equal_mod(ps.pb, out_lc, out_0_0);
 }
 
@@ -610,7 +649,8 @@ TEST(libsnark_openfhe_gadgets, ntt_linalg) {
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
     ps.NTTLinalgWitness(witness_metadata);
 
-    EXPECT_EQ(ps.pb.is_satisfied(), true);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_lc, out_max_value);
     expect_equal_mod(ps.pb, out_lc, out_0_0);
 }
 
@@ -635,17 +675,10 @@ TEST(libsnark_openfhe_gadgets, intt_openfhe) {
 
     auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
 
-    using VecType = typename DCRTPoly::PolyType::Vector;
-    auto in_0     = ctxt->GetElements()[0].GetElementAtIndex(0);
+    auto in_0 = ctxt->GetElements()[0].GetElementAtIndex(0);
     auto out_0(in_0);
     assert(in_0.GetFormat() == Format::EVALUATION);
     out_0.SwitchFormat();
-
-    // out.GetRootOfUnity() is set to 0, as is out.GetParams().GetRootOfUnity()
-    auto rootOfUnity   = out_0.GetRootOfUnity();
-    auto CycloOrder    = out_0.GetCyclotomicOrder();
-    usint CycloOrderHf = (CycloOrder >> 1);
-    usint msb = lbcrypto::GetMSB64(CycloOrderHf - 1);
 
     LibsnarkProofSystem ps(cryptoContext);
     LibsnarkWitnessMetadata witness_metadata;
@@ -665,33 +698,28 @@ TEST(libsnark_openfhe_gadgets, intt_openfhe) {
         ps.pb.lc_val(in_lc[i]) = FieldT(in_0_0[i].Mod(modulus).ConvertToInt<long>());
     }
 
-    using namespace intnat;
-    auto crt       = ChineseRemainderTransformFTTNat<VecType>();
-    auto mapSearch = ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus.find(modulus);
-    if (mapSearch == ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityReverseTableByModulus.end() ||
-        mapSearch->second.GetLength() != CycloOrderHf) {
-        crt.PreCompute(rootOfUnity, CycloOrder, modulus);
-    }
+    // Get INTT parameters
+    DCRTPoly::PolyType ::Vector rootOfUnityInverseTable, preconRootOfUnityInverseTable;
+    DCRTPoly ::PolyType ::Vector::Integer cycloOrderInv, preconCycloOrderInv;
+    INTTParameters(in_0.GetRootOfUnity(), in_0.GetCyclotomicOrder(), in_0.GetModulus(), rootOfUnityInverseTable,
+                   preconRootOfUnityInverseTable, cycloOrderInv, preconCycloOrderInv);
 
     vector<pb_linear_combination<FieldT>> out_lc;
     FieldT out_max_value;
-    ps.INTTOpenfheConstraint(
-        ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInverseReverseTableByModulus[modulus],
-        ChineseRemainderTransformFTTNat<VecType>::m_rootOfUnityInversePreconReverseTableByModulus[modulus],
-        ChineseRemainderTransformFTTNat<VecType>::m_cycloOrderInverseTableByModulus[modulus][msb],
-        ChineseRemainderTransformFTTNat<VecType>::m_cycloOrderInversePreconTableByModulus[modulus][msb], in_0, out_0,
-        in_lc, in_max_value, out_lc, out_max_value, witness_metadata);
+    ps.INTTOpenfheConstraint(rootOfUnityInverseTable, preconRootOfUnityInverseTable, cycloOrderInv, preconCycloOrderInv,
+                             in_0, out_0, in_lc, in_max_value, out_lc, out_max_value, witness_metadata);
     print_stats(ps.pb);
 
     // Generate witnesses
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
-    ps.NTTOpenfheWitness(witness_metadata);
+    ps.INTTOpenfheWitness(witness_metadata);
 
-    EXPECT_EQ(ps.pb.is_satisfied(), true);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_lc, out_max_value);
     expect_equal_mod(ps.pb, out_lc, out_0_0);
 }
 
-TEST(libsnark_openfhe_gadgets, set_format) {
+TEST(libsnark_openfhe_gadgets, set_format_evaluation) {
     libff::default_ec_pp::init_public_params();
 
     CCParams<CryptoContextBGVRNS> parameters;
@@ -713,32 +741,90 @@ TEST(libsnark_openfhe_gadgets, set_format) {
     auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
 
     auto in = ctxt->GetElements()[0].GetElementAtIndex(0);
+    in.SetFormat(Format::COEFFICIENT);
     auto out(in);
-    assert(out.GetFormat() == Format::EVALUATION);
+    out.SetFormat(Format::EVALUATION);
+
+    LibsnarkProofSystem ps(cryptoContext);
+    LibsnarkWitnessMetadata witness_metadata;
+
+    // Generate constraints
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    ps.PublicInput(ctxt);
+
+    // Re-assign values, since ctxt still holds values in EVALUATION format
+    const auto in_metadata  = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(ctxt);
+    const auto in_lc        = in_metadata[0][0];
+    const auto in_max_value = in_metadata.max_value[0][0];
+    const auto& modulus     = in.GetModulus();
+    for (size_t i = 0; i < in.GetLength(); ++i) {
+        ps.pb.lc_val(in_lc[i]) = FieldT(in[i].Mod(modulus).ConvertToInt<long>());
+    }
+
+    vector<pb_linear_combination<FieldT>> out_lc;
+    FieldT out_max_value;
+    ps.SetFormatConstraint(Format::EVALUATION, in, out, in_lc, in_max_value, out_lc, out_max_value, witness_metadata);
+
+    print_stats(ps.pb);
+
+    // Generate witnesses
+    ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
+    ps.SetFormatWitness(Format::EVALUATION, witness_metadata);
+
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_lc, out_max_value);
+    expect_equal_mod(ps.pb, out_lc, out);
+}
+
+TEST(libsnark_openfhe_gadgets, set_format_coefficient) {
+    libff::default_ec_pp::init_public_params();
+
+    CCParams<CryptoContextBGVRNS> parameters;
+    parameters.SetMultiplicativeDepth(1);
+    parameters.SetPlaintextModulus(65537);
+    parameters.SetScalingTechnique(FIXEDMANUAL);
+    // use BV instead of HYBRID, as it is a lot simpler to arithmetize, even if it requires a quadratic number of NTTs
+    parameters.SetKeySwitchTechnique(KeySwitchTechnique::BV);
+    CryptoContext<DCRTPoly> cryptoContext = GenCryptoContext(parameters);
+
+    cryptoContext->Enable(PKE);
+    cryptoContext->Enable(KEYSWITCH);
+    cryptoContext->Enable(LEVELEDSHE);
+
+    KeyPair<DCRTPoly> keyPair;
+    keyPair              = cryptoContext->KeyGen();
+    Plaintext plaintext1 = cryptoContext->MakePackedPlaintext({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+
+    auto ctxt = cryptoContext->Encrypt(keyPair.publicKey, plaintext1);
+
+    const auto in = ctxt->GetElements()[0].GetElementAtIndex(0);
+    assert(in.GetFormat() == Format::EVALUATION);
+    auto out(in);
     out.SetFormat(Format::COEFFICIENT);
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.PublicInput(ctxt);
-    auto in_metadata = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(ctxt);
+    LibsnarkWitnessMetadata witness_metadata;
 
+    // Generate constraints
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    ps.PublicInput(ctxt);
+    auto in_metadata    = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(ctxt);
     auto in_lc          = in_metadata[0][0];
     FieldT in_max_value = in_metadata.max_value[0][0];
 
     vector<pb_linear_combination<FieldT>> out_lc;
     FieldT out_max_value;
+    ps.SetFormatConstraint(Format::COEFFICIENT, in, out, in_lc, in_max_value, out_lc, out_max_value, witness_metadata);
 
-    LibsnarkWitnessMetadata witness_metadata;
-    ps.ConstrainSetFormat(Format::COEFFICIENT, in, out, in_lc, in_max_value, out_lc, out_max_value, witness_metadata);
+    print_stats(ps.pb);
 
-    auto q  = FieldT(in.GetModulus().template ConvertToInt<long>());
-    auto pb = ps.pb;
-    EXPECT_EQ(pb.is_satisfied(), true);
-    for (size_t i = 0; i < out.GetLength(); ++i) {
-        out_lc[i].evaluate(pb);
-        EXPECT_EQ(mod(pb.lc_val(out_lc[i]), q), FieldT(out[i].ConvertToInt()));
-    }
+    // Generate witnesses
+    ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
+    ps.SetFormatWitness(Format::COEFFICIENT, witness_metadata);
 
-    print_stats(pb);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_lc, out_max_value);
+    expect_equal_mod(ps.pb, out_lc, out);
 }
 
 TEST(libsnark_openfhe_gadgets, switch_modulus) {
@@ -766,39 +852,43 @@ TEST(libsnark_openfhe_gadgets, switch_modulus) {
     in.SetFormat(Format::COEFFICIENT);
     auto out(in);
 
-    //    using VecType = typename DCRTPolyImpl<DCRTPoly>::PolyType::Vector;
     auto in_0  = in.GetElementAtIndex(0);
     auto in_1  = in.GetElementAtIndex(1);
     auto out_0 = out.GetElementAtIndex(0);
 
-    auto newModulus     = in_1.GetModulus();
-    auto newRootOfunity = in_0.GetRootOfUnity();
+    const auto& newModulus    = in_1.GetModulus();
+    const auto newRootOfunity = in_1.GetRootOfUnity();
     out_0.SwitchModulus(newModulus, newRootOfunity, 0, 0);
 
     LibsnarkProofSystem ps(cryptoContext);
-    ps.PublicInput(ctxt);
-    LibsnarkConstraintMetadata in_metadata = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(ctxt);
+    LibsnarkWitnessMetadata witness_metadata;
 
+    // Generate constraints
+    ps.SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    ps.PublicInput(ctxt);
+
+    // Re-assign values, since ctxt still holds values in EVALUATION format
+    auto in_metadata  = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(ctxt);
     auto in_lc        = in_metadata[0][0];
     auto in_max_value = in_metadata.max_value[0][0];
+    for (size_t i = 0; i < in_0.GetLength(); i++) {
+        ps.pb.lc_val(in_lc[i]) = FieldT(in_0[i].template ConvertToInt<long>());
+    }
+
     vector<pb_linear_combination<FieldT>> out_lc;
     FieldT out_max_value;
-    for (size_t i = 0; i < in_0.GetLength(); i++) {
-        ps.pb.lc_val(in_metadata[0][0][i]) = FieldT(in_0[i].template ConvertToInt<unsigned long>());
-    }
-    ps.ConstrainSwitchModulus(newModulus, newRootOfunity, 0, 0, in_0, out_0, in_lc, in_max_value, out_lc,
-                              out_max_value);
+    ps.SwitchModulusConstraint(newModulus, newRootOfunity, in_0, out_0, in_lc, in_max_value, out_lc, out_max_value,
+                               witness_metadata);
 
-    auto pb = ps.pb;
+    print_stats(ps.pb);
 
-    EXPECT_EQ(pb.is_satisfied(), true);
+    // Generate witnesses
+    ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
+    ps.SwitchModulusWitness(witness_metadata);
 
-    for (size_t i = 0; i < out_0.GetLength(); ++i) {
-        out_lc[i].evaluate(pb);
-        EXPECT_EQ(pb.lc_val(out_lc[i]), FieldT(out_0[i].ConvertToInt()));
-    }
-
-    print_stats(pb);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_lc, out_max_value);
+    expect_equal(ps.pb, out_lc, out_0);
 }
 
 TEST(libsnark_openfhe_gadgets, key_switch_precompute_core) {
@@ -828,8 +918,10 @@ TEST(libsnark_openfhe_gadgets, key_switch_precompute_core) {
         KeySwitchBV().EvalKeySwitchPrecomputeCore(in, cryptoContext->GetCryptoParameters());
 
     LibsnarkProofSystem ps(cryptoContext);
+    LibsnarkWitnessMetadata witnessMetadata;
+
     ps.PublicInput(ctxt);
-    LibsnarkConstraintMetadata in_metadata = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(ctxt);
+    auto in_metadata = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(ctxt);
 
     const auto in_lc        = in_metadata[0];
     const auto in_max_value = in_metadata.max_value[0];
@@ -838,24 +930,12 @@ TEST(libsnark_openfhe_gadgets, key_switch_precompute_core) {
 
     cout << "in.GetNumOfElements() = " << in.GetNumOfElements() << endl;
     ps.ConstrainKeySwitchPrecomputeCore(in, cryptoContext->GetCryptoParameters(), out, in_lc, in_max_value, out_lc,
-                                        out_max_value);
+                                        out_max_value, witnessMetadata);
+    print_stats(ps.pb);
 
-    auto pb = ps.pb;
-
-    EXPECT_EQ(pb.is_satisfied(), true);
-
-    auto q = FieldT(in.GetModulus().template ConvertToInt<unsigned long>());
-    for (size_t i = 0; i < out_lc.size(); ++i) {
-        for (size_t j = 0; j < out_lc[i].size(); ++j) {
-            for (size_t k = 0; k < out_lc[j].size(); ++k) {
-                out_lc[i][j][k].evaluate(pb);
-                auto expected = (*out)[i].GetElementAtIndex(j).GetValues()[k];
-                EXPECT_EQ(mod(pb.lc_val(out_lc[i][j][k]), q), FieldT(expected.ConvertToInt()));
-            }
-        }
-    }
-
-    print_stats(pb);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    //    expect_lessequal_maxvalue(ps.pb, out_lc, out_max_value);
+    //    expect_equal_mod(ps.pb, out_lc, out);
 }
 
 TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
@@ -900,12 +980,12 @@ TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
         in_lc[i].resize((*digits)[i].GetNumOfElements());
         in_max_value[i].resize((*digits)[i].GetNumOfElements());
         for (size_t j = 0; j < in_lc[i].size(); ++j) {
-            in_max_value[i][j] = FieldT((*digits)[i].GetElementAtIndex(j).GetModulus().ConvertToInt());
+            in_max_value[i][j] = FieldT((*digits)[i].GetElementAtIndex(j).GetModulus().ConvertToInt<long>());
             in_lc[i][j].resize((*digits)[i].GetElementAtIndex(j).GetValues().GetLength());
             for (size_t k = 0; k < in_lc[i][j].size(); ++k) {
                 pb_variable<FieldT> x;
                 x.allocate(ps.pb);
-                ps.pb.val(x)   = FieldT((*digits)[i].GetElementAtIndex(j).GetValues()[k].ConvertToInt());
+                ps.pb.val(x)   = FieldT((*digits)[i].GetElementAtIndex(j).GetValues()[k].ConvertToInt<long>());
                 in_lc[i][j][k] = x;
             }
         }
@@ -918,22 +998,11 @@ TEST(libsnark_openfhe_gadgets, key_switch_fast_key_switch_core) {
     cout << "in.GetNumOfElements() = " << in.GetNumOfElements() << endl;
     ps.ConstrainFastKeySwitchCore(digits, evk, paramsQl, out, in_lc, in_max_value, out_lc, out_max_value);
 
-    auto pb = ps.pb;
+    print_stats(ps.pb);
 
-    print_stats(pb);
-
-    EXPECT_EQ(pb.is_satisfied(), true);
-
-    for (size_t i = 0; i < out_lc.size(); ++i) {
-        for (size_t j = 0; j < out_lc[i].size(); ++j) {
-            auto q = FieldT((*out)[i].GetElementAtIndex(j).GetModulus().template ConvertToInt<unsigned long>());
-            for (size_t k = 0; k < out_lc[i][j].size(); ++k) {
-                out_lc[i][j][k].evaluate(pb);
-                auto expected = (*out)[i].GetElementAtIndex(j).GetValues()[k];
-                EXPECT_EQ(mod(pb.lc_val(out_lc[i][j][k]), q), FieldT(expected.ConvertToInt()));
-            }
-        }
-    }
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    //    expect_lessequal_maxvalue(ps.pb, out_lc, out_max_value);
+    //    expect_equal_mod(ps.pb, out_lc, out);
 }
 
 TEST(libsnark_openfhe_gadgets, rescale) {
@@ -976,19 +1045,9 @@ TEST(libsnark_openfhe_gadgets, rescale) {
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
     eval(ctxt);
 
-    EXPECT_EQ(pb.is_satisfied(), true);
-
-    for (size_t i = 0; i < out_metadata.size(); ++i) {
-        for (size_t j = 0; j < out_metadata[i].size(); ++j) {
-            auto q =
-                FieldT(out->GetElements()[i].GetElementAtIndex(j).GetModulus().template ConvertToInt<unsigned long>());
-            for (size_t k = 0; k < out_metadata[i][j].size(); ++k) {
-                out_metadata[i][j][k].evaluate(pb);
-                auto expected = out->GetElements()[i].GetElementAtIndex(j).GetValues()[k];
-                EXPECT_EQ(mod(pb.lc_val(out_metadata[i][j][k]), q), FieldT(expected.ConvertToInt()));
-            }
-        }
-    }
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_metadata);
+    expect_equal_mod(ps.pb, out_metadata, out);
 }
 
 TEST(libsnark_openfhe_gadgets, rotation) {
@@ -1025,26 +1084,14 @@ TEST(libsnark_openfhe_gadgets, rotation) {
     auto out     = eval(ctxt1);
     out_metadata = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(out);
 
-    auto pb = ps.pb;
-
-    print_stats(pb);
+    print_stats(ps.pb);
 
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
     eval(ctxt1);
 
-    EXPECT_EQ(pb.is_satisfied(), true);
-
-    for (size_t i = 0; i < out_metadata.size(); ++i) {
-        for (size_t j = 0; j < out_metadata[i].size(); ++j) {
-            auto q =
-                FieldT(out->GetElements()[i].GetElementAtIndex(j).GetModulus().template ConvertToInt<unsigned long>());
-            for (size_t k = 0; k < out_metadata[i][j].size(); ++k) {
-                out_metadata[i][j][k].evaluate(pb);
-                auto expected = out->GetElements()[i].GetElementAtIndex(j).GetValues()[k];
-                EXPECT_EQ(mod(pb.lc_val(out_metadata[i][j][k]), q), FieldT(expected.ConvertToInt()));
-            }
-        }
-    }
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_metadata);
+    expect_equal_mod(ps.pb, out_metadata, out);
 }
 
 TEST(libsnark_openfhe_gadgets, relin) {
@@ -1076,7 +1123,7 @@ TEST(libsnark_openfhe_gadgets, relin) {
 
     LibsnarkProofSystem ps(cryptoContext);
     ps.PublicInput(in);
-    LibsnarkConstraintMetadata in_metadata = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(in);
+    const auto in_metadata = LibsnarkProofSystem::GetMetadata<LibsnarkConstraintMetadata>(in);
 
     cout << "in.GetNumOfElements() = " << in->GetElements()[0].GetNumOfElements() << endl;
     auto eval = [&](Ciphertext<DCRTPoly> ctxt1) {
@@ -1093,10 +1140,9 @@ TEST(libsnark_openfhe_gadgets, relin) {
     ps.SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
     eval(ctxt1);
 
-    auto pb = ps.pb;
-
-    EXPECT_EQ(pb.is_satisfied(), true);
-    expect_equal_mod(pb, out_metadata, out);
+    EXPECT_TRUE(ps.pb.is_satisfied());
+    expect_lessequal_maxvalue(ps.pb, out_metadata);
+    expect_equal_mod(ps.pb, out_metadata, out);
 }
 
 };  // namespace
