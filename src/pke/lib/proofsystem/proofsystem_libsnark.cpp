@@ -1763,7 +1763,7 @@ void LibsnarkProofSystem::SetFormatConstraint(const Format format, const DCRTPol
         INTTParameters(in.GetRootOfUnity(), in.GetCyclotomicOrder(), in.GetModulus(), rootOfUnityInverseTable,
                        preconRootOfUnityInverseTable, cycloOrderInv, preconCycloOrderInv);
 
-        INTTOpenfheConstraint(rootOfUnity, preconRootOfUnityInverseTable, cycloOrderInv, preconCycloOrderInv, in, out,
+        INTTOpenfheConstraint(rootOfUnityInverseTable, preconRootOfUnityInverseTable, cycloOrderInv, preconCycloOrderInv, in, out,
                               in_lc, in_max_value, out_lc, out_max_value, witness_metadata);
 #elif defined(PROOFSYSTEM_R1CS_NTT_LINALG)
         // TODO: implement linalg variant for INTT as well
@@ -1786,7 +1786,7 @@ void LibsnarkProofSystem::SetFormatConstraint(const Format format, const DCRTPol
         NTTParameters(in.GetRootOfUnity(), in.GetCyclotomicOrder(), in.GetModulus(), rootOfUnityTable,
                       preconRootOfUnityTable);
 
-        ConstrainNTTClassic(rootOfUnityTable, preconRootOfUnityTable, in, out, in_lc, in_max_value, out_lc,
+        NTTOpenfheConstraint(rootOfUnityTable, preconRootOfUnityTable, in, out, in_lc, in_max_value, out_lc,
                             out_max_value, witness_metadata);
 #elif defined(PROOFSYSTEM_R1CS_NTT_LINALG)
         NTTLinalgConstraint(in, out, in_lc, in_max_value, out_lc, out_max_value, witness_metadata);
