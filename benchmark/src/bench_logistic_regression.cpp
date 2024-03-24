@@ -8,7 +8,6 @@
 #include "benchmark/benchmark.h"
 
 #include <iostream>
-#include <iterator>
 #include <random>
 
 using std::cout, std::endl;
@@ -62,9 +61,18 @@ int64_t HighBound(const EncodingParams& encodingParams) {
     return encodingParams->GetPlaintextModulus() >> 1;
 }
 
+void print_proofsystem_stats(const LibsnarkProofSystem& ps) {
+    auto pb = ps.pb;
+    cout << "#inputs:      " << pb.num_inputs() << endl;
+    cout << "#variables:  " << pb.num_variables() << endl;
+    cout << "#constraints: " << pb.num_constraints() << endl;
+    cout << endl;
+}
+
 class CustomFixture : public benchmark::Fixture {
 public:
     CryptoContext<DCRTPoly> cryptoContext;
+    LibsnarkProofSystem* ps;
     KeyPair<DCRTPoly> keyPair;
 
     const size_t max_feature_value = 100;
@@ -80,21 +88,17 @@ public:
     Ciphertext<DCRTPoly> client_in_1, client_in_2;
     vector<Ciphertext<DCRTPoly>> rots, aggs, pows, sigs;
     Ciphertext<DCRTPoly> out;
+    Plaintext result;
 
-    r1cs_constraint_system<FieldT>* constraint_system;
-
-    r1cs_gg_ppzksnark_verification_key<ppT>* verification_key;
-    r1cs_gg_ppzksnark_proof<ppT>* proof;
-    r1cs_primary_input<FieldT>* primary_input;
+    r1cs_constraint_system<FieldT>* constraint_system{};
+    r1cs_gg_ppzksnark_verification_key<ppT>* verification_key{};
+    r1cs_gg_ppzksnark_proof<ppT>* proof{};
+    r1cs_primary_input<FieldT>* primary_input{};
 
     CustomFixture() {
         libff::default_ec_pp::init_public_params();
         libff::inhibit_profiling_info     = true;
         libff::inhibit_profiling_counters = true;
-    }
-
-    void SetUp(const ::benchmark::State& state) {
-        // TODO: initialize all values only once using global/static variables
 
         // Application setup
         for (int i = 0; i < log_num_features; i++) {
@@ -114,26 +118,33 @@ public:
         cryptoContext->Enable(KEYSWITCH);
         cryptoContext->Enable(LEVELEDSHE);
 
+        ps = new LibsnarkProofSystem(cryptoContext);
+
         cout << "N =    " << cryptoContext->GetRingDimension() << endl;
         cout << "logT = " << GetMSB(parameters.GetPlaintextModulus()) << endl;
+    }
 
-        // Server.Keygen
+    void keygen() {
         keyPair = cryptoContext->KeyGen();
         cryptoContext->EvalMultKeyGen(keyPair.secretKey);
         cryptoContext->EvalRotateKeyGen(keyPair.secretKey, rotation_indices);
+    }
 
-        // Client.Encode, Client.Encrypt_pk
-        fill_pseudorandom(client_in_vec_1, num_features, 0, max_feature_value);
+    void enc() {
         client_in_ptxt_1 = cryptoContext->MakePackedPlaintext(client_in_vec_1);
         client_in_1      = cryptoContext->Encrypt(keyPair.secretKey, client_in_ptxt_1);
-        fill_pseudorandom(client_in_vec_2, num_features, 0, max_feature_value);
         client_in_ptxt_2 = cryptoContext->MakePackedPlaintext(client_in_vec_2);
         client_in_2      = cryptoContext->Encrypt(keyPair.secretKey, client_in_ptxt_2);
+    }
 
-        // Server.Eval
+    void eval() {
+        // Inputs
+        ps->PublicInput(client_in_1);
+        ps->PublicInput(client_in_2);
+
         // Product
-        auto prod    = cryptoContext->EvalMultNoRelin(client_in_1, client_in_2);
-        auto relined = cryptoContext->Relinearize(prod);
+        auto prod    = ps->EvalMultNoRelin(client_in_1, client_in_2);
+        auto relined = ps->Relinearize(prod);
         cout << "prod := client_in * server_in" << endl;
 
         // Aggregate to get inner product
@@ -144,8 +155,8 @@ public:
         cout << "num_features = " << num_features << " = 2^" << log_num_features << endl;
         for (size_t i = 1; i < log_num_features; i++) {
             int rot_amt = 1 << (i - 1);
-            rots[i]     = cryptoContext->EvalRotate(aggs[i - 1], rot_amt);
-            aggs[i]     = cryptoContext->EvalAdd(aggs[i - 1], rots[i]);
+            rots[i]     = ps->EvalRotate(aggs[i - 1], rot_amt);
+            aggs[i]     = ps->EvalAdd(aggs[i - 1], rots[i]);
             cout << "ag_" << i << " := rot(prod, 2^" << i << ") + ag_" << i - 1 << endl;
         }
 
@@ -156,67 +167,69 @@ public:
         sigs[0] = pows[0];
         cout << "approximation_degree = " << approximation_degree << " = 2^" << log_approximation_degree << endl;
         for (size_t i = 1; i <= log_approximation_degree; i++) {
-            pows[i] = cryptoContext->EvalMultNoRelin(sigs[i - 1], sigs[i - 1]);
-            sigs[i] = cryptoContext->Relinearize(pows[i]);
+            pows[i] = ps->EvalMultNoRelin(sigs[i - 1], sigs[i - 1]);
+            sigs[i] = ps->Relinearize(pows[i]);
             cout << "sg_" << i << " := relin(sg_" << i - 1 << "^2)" << endl;
         }
         out = sigs[log_approximation_degree];
+    }
+
+    void dec() {
+        cryptoContext->Decrypt(keyPair.secretKey, out, &result);
+    }
+
+    void SetUp(const ::benchmark::State& state) override {
+        // Server.Keygen
+        keygen();
+
+        // Client.Encode, Client.Encrypt_pk
+        fill_pseudorandom(client_in_vec_1, num_features, 0, max_feature_value);
+        fill_pseudorandom(client_in_vec_2, num_features, 0, max_feature_value);
+
+        enc();
+
+        // Server.Eval
+        ps->SetMode(PROOFSYSTEM_MODE_EVALUATION);
+        eval();
 
         // Client.Decrypt
-        Plaintext result;
-        cryptoContext->Decrypt(keyPair.secretKey, out, &result);
+        dec();
     }
 };
 
 BENCHMARK_F(CustomFixture, Outsourcing_FHE_Client_Setup)(benchmark::State& state) {
-    // BENCH: keygen
     for (auto _ : state) {
-        // Server.Keygen
-        KeyPair<DCRTPoly> keyPair = cryptoContext->KeyGen();
-        cryptoContext->EvalMultKeyGen(keyPair.secretKey);
-        cryptoContext->EvalRotateKeyGen(keyPair.secretKey, rotation_indices);
+        keygen();
     }
 }
 
 BENCHMARK_F(CustomFixture, Outsourcing_FHE_Client_Eval)(benchmark::State& state) {
-    // BENCH: (single) encryption + (single) decryption
     Plaintext result;
     for (auto _ : state) {
-        auto client_in_1 =
-            cryptoContext->Encrypt(keyPair.secretKey, cryptoContext->MakePackedPlaintext(client_in_vec_1));
-        auto client_in_2 =
-            cryptoContext->Encrypt(keyPair.secretKey, cryptoContext->MakePackedPlaintext(client_in_vec_2));
-        cryptoContext->Decrypt(keyPair.secretKey, out, &result);
+        enc();
+        dec();
     }
 }
 
 BENCHMARK_F(CustomFixture, Outsourcing_FHE_Server_Eval)(benchmark::State& state) {
-    // BENCH: eval
+    ps->SetMode(PROOFSYSTEM_MODE_EVALUATION);
     for (auto _ : state) {
-        auto prod    = cryptoContext->EvalMultNoRelin(client_in_1, client_in_2);
-        auto relined = cryptoContext->Relinearize(prod);
+        eval();
+    }
+}
 
-        // Aggregate to get inner product
-        rots = vector<Ciphertext<DCRTPoly>>(1 + log_num_features);  // rots[i] == rotate(rots[i-1], 2^i), rots[0] = prod
-        aggs = vector<Ciphertext<DCRTPoly>>(1 + log_num_features);  // aggs[i] == rots[i-1] + rots[i]
-        rots[0] = relined;
-        aggs[0] = relined;
-        for (size_t i = 1; i < log_num_features; i++) {
-            int rot_amt = 1 << (i - 1);
-            rots[i]     = cryptoContext->EvalRotate(aggs[i - 1], rot_amt);
-            aggs[i]     = cryptoContext->EvalAdd(aggs[i - 1], rots[i]);
-        }
+BENCHMARK_F(CustomFixture, Outsourcing_FHE_ConstraintGeneration)(benchmark::State& state) {
+    ps->SetMode(PROOFSYSTEM_MODE_CONSTRAINT_GENERATION);
+    for (auto _ : state) {
+        eval();
+    }
+    print_proofsystem_stats(*ps);
+}
 
-        // Apply sigmoid approximation
-        pows    = vector<Ciphertext<DCRTPoly>>(1 + log_approximation_degree);
-        sigs    = vector<Ciphertext<DCRTPoly>>(1 + log_approximation_degree);
-        pows[0] = aggs[log_num_features - 1];
-        sigs[0] = pows[0];
-        for (size_t i = 1; i <= log_approximation_degree; i++) {
-            pows[i] = cryptoContext->EvalMultNoRelin(sigs[i - 1], sigs[i - 1]);
-            sigs[i] = cryptoContext->Relinearize(pows[i]);
-        }
-        out = sigs[log_approximation_degree];
+BENCHMARK_F(CustomFixture, Outsourcing_FHE_WitnessGeneration)(benchmark::State& state) {
+    ps->SetMode(PROOFSYSTEM_MODE_WITNESS_GENERATION);
+    for (auto _ : state) {
+        eval();
     }
 }
 

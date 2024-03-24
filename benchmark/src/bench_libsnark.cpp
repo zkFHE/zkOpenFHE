@@ -1,8 +1,8 @@
-
-#include "proofsystem/proofsystem_libsnark.h"
-
-//#include <libsnark/common/default_types/r1cs_ppzksnark_pp.hpp>
+#include <libsnark/common/default_types/r1cs_ppzksnark_pp.hpp>
 #include <libsnark/zk_proof_systems/ppzksnark/r1cs_gg_ppzksnark/r1cs_gg_ppzksnark.hpp>
+#include <libsnark/gadgetlib1/protoboard.hpp>
+
+#include "omp.h"
 
 #include "benchmark/benchmark.h"
 
@@ -16,9 +16,9 @@ protoboard<FieldT> init(size_t num_variables, size_t num_input_variables, size_t
     libff::inhibit_profiling_info     = true;
     libff::inhibit_profiling_counters = true;
 
-    #pragma omp parallel
+#pragma omp parallel
     {
-        #pragma omp single
+#pragma omp single
         std::cout << "#OpenMP threads: " << omp_get_num_threads() << std::endl;
     }
 
@@ -29,15 +29,15 @@ protoboard<FieldT> init(size_t num_variables, size_t num_input_variables, size_t
     pb.set_input_sizes(num_input_variables);
 
     cout << "Building constraint system";
-    #pragma omp parallel for
+#pragma omp parallel for
     for (size_t i = 0; i < num_constraints; i++) {
         // Make R1CS 0.1-sparse, to model FHE workloads better
         linear_combination<FieldT> lc;
         for (size_t j = 0; j < num_variables; j += 10) {
             lc = lc + FieldT(i * j + 1) * vars[j];
         }
-        #pragma omp critical
-	pb.add_r1cs_constraint(r1cs_constraint<FieldT>(lc, lc, lc));
+#pragma omp critical
+        pb.add_r1cs_constraint(r1cs_constraint<FieldT>(lc, lc, lc));
         if (i % (num_constraints / 100) == 0) {
             cout << ".";
             cout.flush();
@@ -84,7 +84,7 @@ static void BM_G16_PROVE(benchmark::State& state) {
         auto pi =
             r1cs_gg_ppzksnark_prover<ppT>(global_keypair->pk, global_pb->primary_input(), global_pb->auxiliary_input());
         if (!global_proof) {
-            global_proof = new r1cs_gg_ppzksnark_proof<ppT>(std::move(pi));
+            global_proof = new r1cs_gg_ppzksnark_proof<ppT>(pi);
         }
     }
 }
